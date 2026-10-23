@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampDpr, detectTier, qualityForTier, type DeviceSignals } from '../src/quality/detect'
+import { clampDpr, detectTier, dprAfterTierChange, qualityForTier, type DeviceSignals } from '../src/quality/detect'
 
 /** 生成一份基线信号（中端安卓），按用例覆写关键字段 */
 function signals(over: Partial<DeviceSignals> = {}): DeviceSignals {
@@ -89,5 +89,28 @@ describe('clampDpr', () => {
     expect(clampDpr(3.5, 2)).toBe(2)
     expect(clampDpr(1.2, 1.5)).toBe(1.2)
     expect(clampDpr(2.8, 1.5)).toBe(1.5)
+  })
+})
+
+describe('dprAfterTierChange 整档切换 dpr 决策', () => {
+  it('自适应降档路径（keepCurrent）：dpr 只降不升，绝不回抬', () => {
+    // high 档自适应已把 dpr 从 2 降到 1.25，整档降到 mid（cap 仍 2）后必须保持 1.25
+    expect(dprAfterTierChange(1.25, 3, 2, true)).toBe(1.25)
+    // mid→low（cap 1.5）：当前 1.25 < 新上限，保持
+    expect(dprAfterTierChange(1.25, 3, 1.5, true)).toBe(1.25)
+  })
+
+  it('自适应降档路径：新档上限更低时进一步收紧', () => {
+    // 当前 2（未做过 dpr 自适应），降到 low 档（cap 1.5）→ 收紧到 1.5
+    expect(dprAfterTierChange(2, 3, 1.5, true)).toBe(1.5)
+    // 设备本身 dpr 1.1 时按设备值收紧
+    expect(dprAfterTierChange(1.1, 1.1, 1, true)).toBe(1)
+  })
+
+  it('手动选档路径（reset）：按新档上限重置（用户预期切档即重置）', () => {
+    expect(dprAfterTierChange(1.25, 3, 2, false)).toBe(2)
+    expect(dprAfterTierChange(1, 3, 2, false)).toBe(2)
+    // 低分屏设备不被抬高超过设备 dpr
+    expect(dprAfterTierChange(1, 1, 2, false)).toBe(1)
   })
 })

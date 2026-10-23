@@ -2,7 +2,7 @@
 
 - **版本**: v0.2（2026-10-23），§12 四项已拍板，进入实现
 - **产品代号**: HSR-Cabin
-- **一句话定位**: 在浏览器里第一人称漫游一列「中国标准动车组」（复兴号 CR400 风格）的内部——司机室、商务座车、二等座车、餐车——可点击交互、昼夜切换，**移动端（安卓手机/平板）优先流畅运行**。
+- **一句话定位**: 在浏览器里第一人称漫游一列「中国标准动车组」（现代高速列车风格）的内部——司机室、商务座车、二等座车、餐车——可点击交互、昼夜切换，**移动端（安卓手机/平板）优先流畅运行**。
 
 ---
 
@@ -19,7 +19,7 @@
 1. **移动优先**：安卓手机/平板是第一目标平台。交互、性能、视觉的所有决策先问「千元机上会怎样」，桌面向它对齐，而不是反过来。
 2. **纯程序化**：零外部资产——所有几何程序化生成，所有贴图用 `CanvasTexture` 程序化绘制。包体小、加载快、无版权风险，天然适配移动网络。
 3. **性能分级第一天就进架构**：启动探测设备 → 选画质档 → 渲染预算随之确定；不是事后补一个「低画质」开关。分档同时决定贴图生成分辨率与窗外景层数。
-4. **高辨识度致敬风格（已拍板，私用）**：外观与内饰采用高辨识度的复兴号风格意象——车窗/司机室前视野可见 CR400BF 式「金红飘带」涂装意象、标志性内饰配色与灯带造型——但**不使用官方文字 LOGO 与注册商标**。用户已确认本项目为私用演示，接受该致敬风格。
+4. **高辨识度致敬风格（已拍板，私用）**：外观与内饰采用高辨识度的中国标准动车组风格意象——车窗/司机室前视野可见「金红飘带」涂装意象、标志性内饰配色与灯带造型——但**不使用官方文字 LOGO 与注册商标**。用户已确认本项目为私用演示，接受该致敬风格。
 
 ### 1.3 非目标（明确不做）
 
@@ -82,7 +82,7 @@
 - **实现红线**：窗外景必须用「贴着车窗的循环滚动物体 + 2–3 层视差」实现，**严禁**真实构建 350 km/h 的大范围场景（性能红线）。
 - **车体动态**：恒定轻微正弦晃动（幅度按画质档，低档可关闭），隧道中加强。
 
-### 3.4 尺寸参考（真实 CR400 近似值，实现可微调）
+### 3.4 尺寸参考（真实中国标准动车组近似值，实现可微调）
 
 | 项 | 参考值 |
 |---|---|
@@ -133,7 +133,7 @@
 
 ## 5. 视觉与光照
 
-- **配色**（CR400 风格，高辨识度致敬）：车体白灰 + 暖白灯带；商务座暗棕/香槟、二等座蓝灰织物、餐车木纹+白；车窗与前视野可见 CR400BF 式金红飘带涂装意象（无需完整车体建模）。
+- **配色**（中国标准动车组风格，高辨识度致敬）：车体白灰 + 暖白灯带；商务座暗棕/香槟、二等座蓝灰织物、餐车木纹+白；车窗与前视野可见金红飘带涂装意象（无需完整车体建模）。
 - **光照**：低强度 `HemisphereLight` 打底；顶灯带用 emissive 材质模拟；中高档允许 2–3 个 `RectAreaLight`/`PointLight`；白天加 1 个窗外 `DirectionalLight`。
 - **阴影**：仅高档开 1 张 1024 shadow map（窗光）；中低档无实时阴影，用预置顶面变暗/暗角近似 AO。
 - **昼夜切换（N）**：夜晚窗光熄灭、灯带降功率、信息屏与指示灯成为主光源、窗外近黑。
@@ -220,14 +220,14 @@
 | 1 | 一等座（2+2）是否纳入 | **砍**，任何阶段都不做（商务+二等+餐车已覆盖全部意象） |
 | 2 | 声音 | **要做**，放 Phase 3（WebAudio 合成报站/门音，默认静音带开关） |
 | 3 | 竖屏策略 | 按建议：竖屏可完整游玩 + 首次进入提示「横屏体验更佳」，不强制 |
-| 4 | 品牌外观 | 高辨识度致敬复兴号风格（金红飘带意象、内饰配色），不用官方 LOGO；私用风险用户已确认接受 |
+| 4 | 品牌外观 | 高辨识度致敬中国标准动车组风格（金红飘带意象、内饰配色），不用官方 LOGO；私用风险用户已确认接受 |
 
 **分发约束**：用户指定所有任务不派发给 `pi`；实现与评审在 `claude_code` / `codex` / `agy` 之间交叉进行。
 
 ## 13. 附录：可直接派发的实现提示词（压缩版）
 
 ```text
-Build a mobile-first 3D Chinese high-speed-rail (CR400-style EMU) interior
+Build a mobile-first 3D Chinese high-speed-rail (modern EMU style) interior
 I can explore in the browser.
 
 - One-page app with Three.js and Vite. Run it with: npm run dev.
@@ -238,7 +238,7 @@ I can explore in the browser.
   (1+2 seats that recline flat), second class (3+2 rows, luggage racks, hot-water
   station, washroom with squat + seated toilets), café bar car. Real-ish
   dimensions (~24m long, ~3.1m wide interior). High-recognition Fuxing-style
-  look (e.g. CR400BF gold-red stripe livery visible through windows), but no
+  look (e.g. gold-red stripe livery visible through windows), but no
   official logos or wordmarks.
 - Touch-first controls: left virtual joystick to walk, right-side drag to look,
   tap to interact (doors, window shades, seat recline, tray tables); hotspots

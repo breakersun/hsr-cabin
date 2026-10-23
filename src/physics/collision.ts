@@ -109,7 +109,9 @@ export function resolveMovement(
   boxes: readonly AABB[],
 ): { x: number; z: number } {
   const maxStep = Math.max(r * 0.9, 0.05)
-  const dist = Math.max(Math.abs(dx), Math.abs(dz))
+  // 子步数按欧氏距离决定：斜向移动每步实际位移 = hypot(sx, sz)，
+  // 若按坐标分量最大值估算会低估约 1.41 倍（45° 时），导致斜向防隧穿失效
+  const dist = Math.hypot(dx, dz)
   const steps = Math.max(1, Math.ceil(dist / maxStep))
   const sx = dx / steps
   const sz = dz / steps
@@ -157,25 +159,32 @@ export function clampPointToBox(
 export class CollisionWorld {
   private statics: AABB[] = []
   private dynamics = new Map<string, AABB | null>()
+  private activeCache: readonly AABB[] | null = null
 
   addStatic(box: AABB): void {
     this.statics.push(box)
+    this.activeCache = null
   }
 
   /** 动态碰撞体：设为 null 表示移除（门打开）。 */
   setDynamic(id: string, box: AABB | null): void {
     this.dynamics.set(id, box)
+    this.activeCache = null
   }
 
   getDynamic(id: string): AABB | null | undefined {
     return this.dynamics.get(id)
   }
 
-  /** 当前生效的全部碰撞体。 */
-  active(): AABB[] {
-    const out = this.statics.slice()
-    for (const b of this.dynamics.values()) if (b) out.push(b)
-    return out
+  /** 当前生效的全部碰撞体。缓存复用（仅在注册表变化时重建），
+   *  主循环每帧调用零分配。返回数组仅供只读。 */
+  active(): readonly AABB[] {
+    if (!this.activeCache) {
+      const out = this.statics.slice()
+      for (const b of this.dynamics.values()) if (b) out.push(b)
+      this.activeCache = out
+    }
+    return this.activeCache
   }
 
   resolve(

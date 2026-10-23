@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "在浏览器里第一人称漫游中国高铁二等座车厢（CR400 风格致敬，程序化几何）",
+  "description": "在浏览器里第一人称漫游中国高铁二等座车厢（现代高速列车风格致敬，程序化几何）",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -26,6 +26,7 @@ export class DebugPanel {
       `fps ${s.fps} · ${s.frameMs.toFixed(1)}ms\n` +
       `tris ${s.triangles.toLocaleString()} · calls ${s.calls}\n` +
       `tier ${s.tier} · dpr ${s.dpr.toFixed(2)}\n` +
-      `idle-throttled ${s.throttled ? 'yes' : 'no'}`
+      `idle-throttled ${s.throttled ? 'yes' : 'no'}` +
+      (s.cam ? `\n${s.cam}` : '')
   }
 }

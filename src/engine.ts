@@ -14,7 +14,7 @@ import {
   WebGLRenderer,
 } from 'three'
 import type { QualitySettings } from './quality/detect'
-import { clampDpr } from './quality/detect'
+import { clampDpr, dprAfterTierChange } from './quality/detect'
 
 export interface EngineStats {
   fps: number
@@ -24,6 +24,8 @@ export interface EngineStats {
   dpr: number
   tier: string
   throttled: boolean
+  /** 调试面板附加行：相机姿态读数（出生颠倒类问题的机上诊断用），未启用时缺省 */
+  cam?: string
 }
 
 const IDLE_AFTER_MS = 5000
@@ -56,12 +58,18 @@ export class Engine {
     this.currentDpr = clampDpr(this.deviceDpr, quality.dprCap)
     this.renderer = new WebGLRenderer({
       canvas,
+      // MSAA 只能在上下文创建时决定；运行时切档不重建上下文（如实反映：
+      // MSAA 由初始档位决定，后续切档不改变；见 detect.ts QualitySettings.antialias）
       antialias: quality.antialias,
       powerPreference: 'high-performance',
     })
     this.renderer.setPixelRatio(this.currentDpr)
     this.renderer.setSize(window.innerWidth, window.innerHeight, false)
     this.camera = new PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 400)
+    // 姿态约定：与 Player.applyToCamera 的欧拉一致（YXZ），并显式钉住 up，
+    // 保证出生与运行全程「抬头=天花板、低头=地板」。
+    this.camera.rotation.order = 'YXZ'
+    this.camera.up.set(0, 1, 0)
     this.applyQuality(quality)
 
     document.addEventListener('visibilitychange', this.handleVisibility)
@@ -83,10 +91,12 @@ export class Engine {
     }
   }
 
-  /** 应用画质档（dpr/阴影/色调映射）。 */
-  applyQuality(q: QualitySettings): void {
+  /** 应用画质档（dpr/阴影/色调映射）。
+   *  keepCurrentDpr=true（自适应降档路径）：dpr 只降不升（见 dprAfterTierChange），
+   *  避免整档切换把自适应已下调的 dpr 回抬；默认（手动选档）按新档上限重置。 */
+  applyQuality(q: QualitySettings, opts?: { keepCurrentDpr?: boolean }): void {
     this.quality = q
-    this.currentDpr = clampDpr(this.deviceDpr, q.dprCap)
+    this.currentDpr = dprAfterTierChange(this.currentDpr, this.deviceDpr, q.dprCap, opts?.keepCurrentDpr === true)
     this.renderer.setPixelRatio(this.currentDpr)
     this.renderer.shadowMap.enabled = q.shadows
     this.renderer.shadowMap.type = PCFSoftShadowMap

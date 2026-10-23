@@ -55,6 +55,8 @@ export class Hud {
   private demoBtn: HTMLElement
   private qualityBtns = new Map<string, HTMLElement>()
   private targetTimer = 0
+  /** updateState 脏检查基准（主循环每帧调用，无变化时不触碰 DOM） */
+  private lastState: HudState | null = null
 
   constructor(
     private isTouch: boolean,
@@ -207,7 +209,19 @@ export class Hud {
     this.targetTimer = window.setTimeout(() => this.targetLabel.classList.remove('show'), 1800)
   }
 
+  /** 主循环每帧调用；内部脏检查，状态未变化时零 DOM 写。 */
   updateState(s: HudState): void {
+    const last = this.lastState
+    if (
+      last &&
+      last.night === s.night &&
+      last.fly === s.fly &&
+      last.demo === s.demo &&
+      last.quality === s.quality
+    ) {
+      return
+    }
+    this.lastState = { ...s }
     this.dayNightBtn.textContent = s.night ? '切换白天' : '切换夜晚'
     this.flyBtn.classList.toggle('on', s.fly)
     this.demoBtn.classList.toggle('on', s.demo)

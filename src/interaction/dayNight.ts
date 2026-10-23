@@ -56,6 +56,8 @@ export class DayNightController {
   /** 0 = 白天，1 = 夜晚（往返过渡中） */
   blend = 0
   transitioning = false
+  /** sample() 复用对象（主循环每帧调用，避免每帧分配）；调用方当帧消费 */
+  private sampled: DayNightChannels = { ...DAY_CHANNELS }
 
   constructor(public durationSec = 0.8) {}
 
@@ -86,18 +88,18 @@ export class DayNightController {
     return this.transitioning
   }
 
-  /** 当前各通道插值。 */
+  /** 当前各通道插值（写入预分配对象并返回同一引用，主循环零分配）。 */
   sample(): DayNightChannels {
     const t = this.blend
-    return {
-      ambient: lerp(DAY_CHANNELS.ambient, NIGHT_CHANNELS.ambient, t),
-      sun: lerp(DAY_CHANNELS.sun, NIGHT_CHANNELS.sun, t),
-      strips: lerp(DAY_CHANNELS.strips, NIGHT_CHANNELS.strips, t),
-      cabinPoint: lerp(DAY_CHANNELS.cabinPoint, NIGHT_CHANNELS.cabinPoint, t),
-      screen: lerp(DAY_CHANNELS.screen, NIGHT_CHANNELS.screen, t),
-      windowWorld: lerp(DAY_CHANNELS.windowWorld, NIGHT_CHANNELS.windowWorld, t),
-      townLights: lerp(DAY_CHANNELS.townLights, NIGHT_CHANNELS.townLights, t),
-      glassReflect: lerp(DAY_CHANNELS.glassReflect, NIGHT_CHANNELS.glassReflect, t),
-    }
+    const c = this.sampled
+    c.ambient = lerp(DAY_CHANNELS.ambient, NIGHT_CHANNELS.ambient, t)
+    c.sun = lerp(DAY_CHANNELS.sun, NIGHT_CHANNELS.sun, t)
+    c.strips = lerp(DAY_CHANNELS.strips, NIGHT_CHANNELS.strips, t)
+    c.cabinPoint = lerp(DAY_CHANNELS.cabinPoint, NIGHT_CHANNELS.cabinPoint, t)
+    c.screen = lerp(DAY_CHANNELS.screen, NIGHT_CHANNELS.screen, t)
+    c.windowWorld = lerp(DAY_CHANNELS.windowWorld, NIGHT_CHANNELS.windowWorld, t)
+    c.townLights = lerp(DAY_CHANNELS.townLights, NIGHT_CHANNELS.townLights, t)
+    c.glassReflect = lerp(DAY_CHANNELS.glassReflect, NIGHT_CHANNELS.glassReflect, t)
+    return c
   }
 }

@@ -16,6 +16,8 @@ export class DesktopControls {
   active = false
   private keys = new Set<string>()
   private locked = false
+  /** input() 复用对象（主循环每帧调用，避免每帧分配） */
+  private inputState = { forward: 0, strafe: 0, run: false, lift: 0 }
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -70,7 +72,7 @@ export class DesktopControls {
     this.cb.onLook(e.movementX, e.movementY)
   }
 
-  /** 采样移动输入。 */
+  /** 采样移动输入（写入预分配对象并返回同一引用，主循环零分配）。 */
   input(): { forward: number; strafe: number; run: boolean; lift: number } {
     let f = 0
     let s = 0
@@ -81,7 +83,12 @@ export class DesktopControls {
     let lift = 0
     if (this.keys.has('q')) lift += 1
     if (this.keys.has('r')) lift -= 1
-    return { forward: f, strafe: s, run: this.keys.has('shift'), lift }
+    const st = this.inputState
+    st.forward = f
+    st.strafe = s
+    st.run = this.keys.has('shift')
+    st.lift = lift
+    return st
   }
 
   dispose(): void {

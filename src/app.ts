@@ -3,7 +3,7 @@
  * 分帧生成场景（每帧一步，带进度条），失败时降级到错误页。
  */
 
-import { DirectionalLight, HemisphereLight, PointLight } from 'three'
+import { DirectionalLight, HemisphereLight, PointLight, Vector3 } from 'three'
 import { Engine } from './engine'
 import { AdaptiveGovernor } from './quality/adaptive'
 import { collectSignals, detectTier, qualityForTier, type QualitySettings, type Tier } from './quality/detect'
@@ -307,10 +307,24 @@ export async function bootApp(): Promise<void> {
 
   // ---- 自适应降档 ----
   const TIER_ORDER: Tier[] = ['high', 'mid', 'low']
-  const applyTier = (t: Tier, notify: boolean): void => {
+  /** 切换画质档。keepCurrentDpr=true（自适应降档路径）时 dpr 只降不升，
+   *  避免整档切换回抬、抵消 governor 已下调的 dpr；手动选档重置。 */
+  const applyTier = (t: Tier, notify: boolean, keepCurrentDpr = false): void => {
     quality = qualityForTier(t)
-    engine.applyQuality(quality)
+    engine.applyQuality(quality, { keepCurrentDpr })
     windowWorld.setLayers(quality.sceneryLayers)
+    // 阴影分辨率随档位生效：更新 mapSize 并释放旧 shadow map
+    // （不 dispose 的话 three 会沿用已分配的旧分辨率贴图）
+    if (
+      quality.shadowMapSize > 0 &&
+      (sun.shadow.mapSize.x !== quality.shadowMapSize || sun.shadow.mapSize.y !== quality.shadowMapSize)
+    ) {
+      sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize)
+      if (sun.shadow.map) {
+        sun.shadow.map.dispose()
+        sun.shadow.map = null
+      }
+    }
     if (notify) hud.toast(`性能保护：已降至${t === 'low' ? '低' : '中'}档画质`)
   }
   const governor = new AdaptiveGovernor(
@@ -324,7 +338,7 @@ export async function bootApp(): Promise<void> {
       stepDownTier: () => {
         const i = TIER_ORDER.indexOf(engine.quality.tier)
         if (i < 0 || i >= TIER_ORDER.length - 1) return false
-        applyTier(TIER_ORDER[i + 1] ?? 'low', true)
+        applyTier(TIER_ORDER[i + 1] ?? 'low', true, true)
         return true
       },
     },
@@ -340,6 +354,25 @@ export async function bootApp(): Promise<void> {
   await nextFrame()
   let swayT = 0
   let hoverTimer = 0
+  const camDirTmp = new Vector3()
+
+  // 出生姿态自检（真机反馈「出生即上下颠倒」的防线）：视线必须水平朝车头、
+  // up 必须朝上；若被环境/异常污染则强制纠正并留 console 痕迹，配合
+  // ?debug=1 的相机读出（up/dir/pitch）可在真机上直接定位问题层。
+  player.applyToCamera(camera)
+  const spawnDir = camera.getWorldDirection(camDirTmp)
+  if (Math.abs(spawnDir.y) > 0.02 || camera.up.y < 0.99) {
+    // eslint-disable-next-line no-console -- 异常路径必须留痕（真机诊断依据）
+    console.error('[hsr-cabin] 出生姿态异常，已强制纠正', {
+      dirY: spawnDir.y,
+      upY: camera.up.y,
+      pitch: player.pitch,
+      yaw: player.yaw,
+    })
+    camera.up.set(0, 1, 0)
+    camera.rotation.order = 'YXZ'
+    camera.rotation.set(0, player.yaw, 0)
+  }
 
   const frame = (dt: number): boolean => {
     // 输入 → 移动
@@ -386,14 +419,13 @@ export async function bootApp(): Promise<void> {
     const scr = cabin.screenMat.map
     if (scr) scr.offset.x = (performance.now() * 0.000018) % 1
 
-    // 相机 + 车体晃动（隧道中加强）
-    player.applyToCamera(camera)
+    // 相机 + 车体晃动（隧道中加强）；晃动 roll 并入姿态欧拉写入
     const swayAmp = quality.sway * (1 + T * 2.4)
+    if (swayAmp > 0) swayT += dt
+    player.applyToCamera(camera, swayAmp > 0 ? Math.sin(swayT * 1.7) * 0.0045 * swayAmp : 0)
     if (swayAmp > 0) {
-      swayT += dt
       camera.position.y += Math.sin(swayT * 2.2) * 0.006 * swayAmp
       camera.position.x += Math.sin(swayT * 1.31) * 0.004 * swayAmp
-      camera.rotation.z = Math.sin(swayT * 1.7) * 0.0045 * swayAmp
     }
 
     // 桌面悬停提示（节流）
@@ -402,6 +434,14 @@ export async function bootApp(): Promise<void> {
       hoverTimer = 0
       const label = picker.hover()
       if (label) hud.showTarget(label)
+      // 调试面板相机读数（与悬停同节流，避免每帧字符串分配）
+      if (debugEnabled) {
+        const dir = camera.getWorldDirection(camDirTmp)
+        engine.stats.cam =
+          `up(${camera.up.x.toFixed(2)},${camera.up.y.toFixed(2)},${camera.up.z.toFixed(2)}) ` +
+          `dir(${dir.x.toFixed(2)},${dir.y.toFixed(2)},${dir.z.toFixed(2)}) ` +
+          `pitch ${((player.pitch * 180) / Math.PI).toFixed(0)}°`
+      }
     }
 
     debugPanel.update()

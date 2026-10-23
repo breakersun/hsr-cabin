@@ -3,7 +3,7 @@
  * yaw/pitch 约定：Euler YXZ；yaw=0 面向 -Z，yaw=π 面向 +Z（车头方向）。
  */
 
-import { Euler, MathUtils, PerspectiveCamera, Quaternion } from 'three'
+import { MathUtils, PerspectiveCamera } from 'three'
 import type { AABB } from '../physics/collision'
 import { clampPointToBox } from '../physics/collision'
 import type { CollisionWorld } from '../physics/collision'
@@ -33,9 +33,6 @@ export class Player {
   flyY = 1.55
   /** 本次 update 是否发生位移（供闲置检测） */
   moved = false
-
-  private euler = new Euler(0, 0, 0, 'YXZ')
-  private quat = new Quaternion()
 
   constructor(public shell: AABB) {}
 
@@ -100,10 +97,15 @@ export class Player {
     if (this.freeFly) this.flyY = this.eyeY
   }
 
-  applyToCamera(camera: PerspectiveCamera): void {
-    this.euler.set(this.pitch, this.yaw, 0)
-    this.quat.setFromEuler(this.euler)
-    camera.quaternion.copy(this.quat)
+  /** 姿态写入相机：pitch/yaw/roll 直接写 camera.rotation（YXZ，单一欧拉权威源）。
+   *  此前「YXZ 四元数 → camera 默认 XYZ 欧拉自动同步 → 主循环再改 rotation.z」
+   *  的混合序写入会在 yaw=π 时把 XYZ 分解出的 x 分量取反（等价姿态但符号不可预期）；
+   *  现统一为 YXZ 直写 + 显式钉住 up=(0,1,0)，保证任何环境下
+   *  出生即正立、抬头看天花板、低头看地板。rollZ 仅供车体晃动微滚转。 */
+  applyToCamera(camera: PerspectiveCamera, rollZ = 0): void {
+    camera.rotation.order = 'YXZ'
+    camera.rotation.set(this.pitch, this.yaw, rollZ)
+    camera.up.set(0, 1, 0)
     camera.position.set(this.x, this.freeFly ? this.flyY : this.eyeY, this.z)
   }
 }

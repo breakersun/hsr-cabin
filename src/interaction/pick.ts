@@ -16,7 +16,16 @@ export interface PickHandler {
 }
 
 const MAX_DIST = 3.2
-const SPREAD = 0.03 // 移动端扩样偏移（NDC）
+/** 移动端拾取热区下限：两轴各 ≥48 CSS 像素（触控可用性）。 */
+const TAP_MIN_PX = 48
+
+/** 把 48px 热区换算为 NDC 扩样半径（纯函数，vitest 覆盖）。
+ *  NDC 每轴满跨度 2 对应画布对应轴的 CSS 尺寸，故 48px → 48*2/len。
+ *  固定 0.03 NDC 在 390×844 竖屏上仅 ~12px，远低于触控热区下限；
+ *  按画布实际尺寸换算后两轴均 ≥48px。 */
+export function tapSpreadNdc(cssW: number, cssH: number): { x: number; y: number } {
+  return { x: (TAP_MIN_PX * 2) / Math.max(1, cssW), y: (TAP_MIN_PX * 2) / Math.max(1, cssH) }
+}
 
 export class Picker {
   private raycaster = new Raycaster()
@@ -64,16 +73,19 @@ export class Picker {
     return null
   }
 
-  /** 交互（点击/E/准星）：命中返回 handler 结果。 */
+  /** 交互（点击/E/准星）：命中返回 handler 结果。
+   *  spread=true（移动端）按画布尺寸换算 ≥48px 热区做 5 射线扩样。 */
   interactAt(clientX: number, clientY: number, spread: boolean): { label: string; toast: string } | null {
     const base = this.toNdc(clientX, clientY)
     const targets: Vector2[] = [base.clone()]
     if (spread) {
+      const rect = this.canvas.getBoundingClientRect()
+      const sp = tapSpreadNdc(rect.width, rect.height)
       for (const [ox, oy] of [
-        [SPREAD, 0],
-        [-SPREAD, 0],
-        [0, SPREAD],
-        [0, -SPREAD],
+        [sp.x, 0],
+        [-sp.x, 0],
+        [0, sp.y],
+        [0, -sp.y],
       ]) {
         targets.push(base.clone().add(new Vector2(ox, oy)))
       }

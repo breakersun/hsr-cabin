@@ -26,6 +26,8 @@ export interface QualitySettings {
   shadowMapSize: number
   sceneryLayers: 1 | 2 | 3
   sway: number // 车体晃动幅度系数（0 = 关）
+  /** MSAA 开关：仅在构造 WebGLRenderer（上下文创建）时生效；
+   * 运行时切档不重建上下文，故 MSAA 由初始档位决定，切换档位不改变它。 */
   antialias: boolean
   toneMapping: boolean
   fpsCap: number // 0 = 不限制
@@ -92,6 +94,23 @@ export function qualityForTier(tier: Tier): QualitySettings {
 
 export function clampDpr(dpr: number, cap: number): number {
   return Math.min(dpr, cap)
+}
+
+/**
+ * 整档切换后的 dpr 决策（纯函数，vitest 覆盖）。两条路径：
+ * - 自适应降档（keepCurrent=true）：维持或收紧当前值，绝不回抬——
+ *   自适应已把 dpr 降到位时，切到上限更高的档也不得把 dpr 升回去，
+ *   否则整档切换会抵消之前的 dpr 自适应降幅；仅当新档上限更低时进一步收紧。
+ * - 手动选档（keepCurrent=false）：按新档上限重置（用户预期「切档即重置」）。
+ */
+export function dprAfterTierChange(
+  currentDpr: number,
+  deviceDpr: number,
+  newCap: number,
+  keepCurrent: boolean,
+): number {
+  const reset = clampDpr(deviceDpr, newCap)
+  return keepCurrent ? Math.min(currentDpr, reset) : reset
 }
 
 /** 从真实环境采集信号（测试中用假 signals 替代）。 */

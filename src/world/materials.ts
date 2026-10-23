@@ -5,7 +5,6 @@
 
 import {
   CanvasTexture,
-  Color,
   LinearFilter,
   LinearMipmapLinearFilter,
   MeshStandardMaterial,
@@ -129,7 +128,7 @@ function brushedTexture(scale: number): CanvasTexture {
   return toTexture(canvas, 1, 2)
 }
 
-/** 外侧金红飘带（CR400 式致敬意象，无官方标识） */
+/** 外侧金红飘带（中国标准动车组风格致敬意象，无官方标识） */
 function liveryTexture(): CanvasTexture {
   const { canvas, ctx } = makeCanvas(64, 128)
   const grad = ctx.createLinearGradient(0, 0, 64, 0)
@@ -192,11 +191,4 @@ export function buildMaterials(textureScale: number): MaterialLibrary {
       }
     },
   } as MaterialLibrary
-}
-
-/** 把材质颜色按亮度倍率调暗/调亮（窗外景昼夜 & 隧道用），避免克隆材质。 */
-export function tintMaterial(mat: MeshStandardMaterial, baseColor: number, brightness: number): void {
-  const c = mat.color
-  c.copy(new Color(baseColor))
-  c.multiplyScalar(Math.max(0.02, brightness))
 }

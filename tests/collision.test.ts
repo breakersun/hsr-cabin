@@ -142,3 +142,41 @@ describe('辅助函数', () => {
     expect(q.y).toBeCloseTo(2.9 - 0.25, 5) // 顶板内表面
   })
 })
+
+describe('resolveMovement 斜向子步进（欧氏距离回归）', () => {
+  // 子步数按 hypot(dx,dz) 决定：45° 斜向移动每步实际位移 = hypot(sx,sz)，
+  // 按坐标分量最大值估算会低估 ~1.41 倍。薄门板 + 大斜向位移不得隧穿。
+  const doorPanel = makeAabb(0, 1.0, 0, 0.04, 1.0, 2.0) // 8cm 薄板（z 向加长：斜向路径无法绕过端部，只能穿过或被挡）
+  const cases: Array<[string, number, number]> = [
+    ['左前 45°', -1.6, 1.6],
+    ['右前 45°', 1.6, 1.6],
+    ['左后 45°', -1.6, -1.6],
+    ['右后 45°', 1.6, -1.6],
+    ['浅角 30°', -2.4, 1.4],
+    ['浅角 60°', -1.1, 1.9],
+  ]
+  for (const [name, dx, dz] of cases) {
+    it(`${name} 大位移（hypot≈${Math.hypot(dx, dz).toFixed(2)}m）不穿过薄门板`, () => {
+      // 从移动方向的对侧出发（dx>0 → 左侧出发），斜向跨越门板所在平面
+      const startX = dx > 0 ? -0.6 : 0.6
+      const res = resolveMovement(startX, -dz, dx, dz, FEET, HEAD, R, [doorPanel])
+      // 终点不得越过门板平面到另一侧（被推出停在门板 + 半径之外）
+      const crossed = Math.sign(res.x) !== Math.sign(startX) && Math.abs(res.x) > 0.05
+      expect(crossed).toBe(false)
+      expect(capsuleHitsAabb(res.x, res.z, FEET, HEAD, R, doorPanel)).toBe(false)
+    })
+  }
+
+  it('active() 缓存：注册表变化后重建，返回值随动态体更新', () => {
+    const w = new CollisionWorld()
+    w.addStatic(seatBox)
+    const a1 = w.active()
+    expect(a1).toHaveLength(1)
+    w.setDynamic('door', lowBin)
+    const a2 = w.active()
+    expect(a2).toHaveLength(2)
+    expect(a1).toHaveLength(1) // 旧快照不被追加污染
+    w.setDynamic('door', null)
+    expect(w.active()).toHaveLength(1)
+  })
+})
