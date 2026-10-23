@@ -11,6 +11,11 @@ on:
         required: false
         type: string
         default: ""
+      base_path:
+        description: Vite base path (use / for a custom domain root)
+        required: false
+        type: string
+        default: /hsr-cabin/
 
 permissions:
   contents: read
@@ -42,9 +47,11 @@ jobs:
         if: ${{ hashFiles('package.json') != '' }}
         run: npm ci
 
-      - name: Build Vite site with project-page base path
+      - name: Build Vite site with configurable base path
         if: ${{ hashFiles('package.json') != '' }}
-        run: npm run build -- --base=/hsr-cabin/
+        env:
+          BASE_PATH: ${{ inputs.base_path || '/hsr-cabin/' }}
+        run: npm run build -- --base="$BASE_PATH"
 
       - name: Create temporary placeholder site
         if: ${{ hashFiles('package.json') == '' }}
