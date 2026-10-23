@@ -15,7 +15,7 @@ on:
         description: Vite base path (use / for a custom domain root)
         required: false
         type: string
-        default: /hsr-cabin/
+        default: /
 
 permissions:
   contents: read
@@ -50,7 +50,7 @@ jobs:
       - name: Build Vite site with configurable base path
         if: ${{ hashFiles('package.json') != '' }}
         env:
-          BASE_PATH: ${{ inputs.base_path || '/hsr-cabin/' }}
+          BASE_PATH: ${{ inputs.base_path || '/' }}
         run: npm run build -- --base="$BASE_PATH"
 
       - name: Create temporary placeholder site
