@@ -1,0 +1,94 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: Git ref to build (leave empty to use the current ref)
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    steps:
+      - name: Check out target ref
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.target_ref != '' && github.event.inputs.target_ref || github.ref }}
+
+      - name: Set up Node.js
+        if: ${{ hashFiles('package.json') != '' }}
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        if: ${{ hashFiles('package.json') != '' }}
+        run: npm ci
+
+      - name: Build Vite site with project-page base path
+        if: ${{ hashFiles('package.json') != '' }}
+        run: npm run build -- --base=/hsr-cabin/
+
+      - name: Create temporary placeholder site
+        if: ${{ hashFiles('package.json') == '' }}
+        run: |
+          mkdir -p dist
+          cat > dist/index.html <<'HTML'
+          <!doctype html>
+          <html lang="zh-CN">
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <meta http-equiv="refresh" content="120">
+              <title>HSR Cabin - 建设中</title>
+              <style>
+                :root { color-scheme: light dark; }
+                body {
+                  display: grid;
+                  min-height: 100vh;
+                  margin: 0;
+                  place-content: center;
+                  gap: 1rem;
+                  text-align: center;
+                  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+                }
+                a { color: inherit; }
+              </style>
+            </head>
+            <body>
+              <main>
+                <h1>🚧 建设中</h1>
+                <p>MVP 正在并行开发，站点会在部署更新后自动刷新。</p>
+                <a href="https://github.com/breakersun/hsr-cabin">访问仓库</a>
+              </main>
+            </body>
+          </html>
+          HTML
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
