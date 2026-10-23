@@ -12,10 +12,23 @@ permissions:
   contents: read
 
 jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      has_project: ${{ steps.detect.outputs.has_project }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Detect project files
+        id: detect
+        run: echo "has_project=${{ hashFiles('package.json') != '' }}" >> "$GITHUB_OUTPUT"
+
   quality:
+    needs: detect
     # main is the repository bootstrap branch and does not yet contain the
     # Vite + TypeScript project; skip cleanly until package.json lands there.
-    if: ${{ hashFiles('package.json') != '' }}
+    if: ${{ needs.detect.outputs.has_project == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository

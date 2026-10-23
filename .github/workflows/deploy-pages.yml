@@ -21,17 +21,15 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
-environment:
-  github-pages
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: github-pages
     steps:
       - name: Check out target ref
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.target_ref != '' && inputs.target_ref || github.ref }}
+          ref: ${{ github.event.inputs.target_ref != '' && github.event.inputs.target_ref || github.ref }}
 
       - name: Set up Node.js
         if: ${{ hashFiles('package.json') != '' }}
