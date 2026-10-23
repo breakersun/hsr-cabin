@@ -91,6 +91,7 @@ export class Engine {
     this.renderer.shadowMap.enabled = q.shadows
     this.renderer.shadowMap.type = PCFSoftShadowMap
     this.renderer.toneMapping = q.toneMapping ? ACESFilmicToneMapping : NoToneMapping
+    this.renderer.toneMappingExposure = 1.18 // ACES 中间调偏暗，略提曝光
     this.stats.tier = q.tier
     this.stats.dpr = this.currentDpr
   }

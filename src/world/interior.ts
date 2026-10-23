@@ -28,7 +28,7 @@ import { makeAabb, type AABB } from '../physics/collision'
 import { BoilerMachine, CurtainMachine } from '../interaction/machines'
 import { WINDOW_BAYS } from './cabin'
 import type { MaterialLibrary } from './materials'
-import { mergedBoxMesh, type BoxSpec } from './geo'
+import { mergeBufferGeometries, mergedBoxMesh, type BoxSpec } from './geo'
 
 export interface CurtainRef {
   index: number
@@ -130,8 +130,7 @@ export class Interior {
       }
     }
     const rack = mergedBoxMesh(specs, mats.luggageRack)
-    rack.castShadow = this.shadows
-    this.group.add(rack)
+    this.group.add(rack) // 高位薄板：不开阴影（省 shadow pass）
 
     // 装饰行李（InstancedMesh + 每实例颜色）
     const sizes: [number, number, number][] = [
@@ -157,8 +156,7 @@ export class Interior {
       bags.setMatrixAt(i, this.mTmp)
       bags.setColorAt(i, c.setHex(colors[i % colors.length] ?? 0x555555))
     })
-    bags.castShadow = this.shadows
-    this.group.add(bags)
+    this.group.add(bags) // 行李架上方：不开阴影
   }
 
   /** 每窗一副下拉窗帘（InstancedMesh，从顶部展开） */
@@ -292,8 +290,7 @@ export class Interior {
       suit.setMatrixAt(i, this.mTmp)
       suit.setColorAt(i, c.setHex([0x39516b, 0x6b3939, 0x39543b, 0x514061, 0x2f2f34][i] ?? 0x444444))
     })
-    suit.castShadow = this.shadows
-    this.group.add(suit)
+    this.group.add(suit) // 贴墙大件：不开阴影
     this.colliders.push(makeAabb(1.05, 0.6, zMid, 0.62, 0.6, len / 2 + 0.15))
   }
 
@@ -308,12 +305,10 @@ export class Interior {
     const face = new Mesh(new BoxGeometry(0.03, 0.96, 0.5), mats.darkPanel)
     face.position.set(x + 0.25, y + 0.05, z)
     this.group.add(face)
-    const spout = new Mesh(new CylinderGeometry(0.022, 0.022, 0.14, 10), mats.seatFrame)
-    spout.position.set(x + 0.28, y - 0.22, z)
-    this.group.add(spout)
-    const grid = new Mesh(new BoxGeometry(0.16, 0.03, 0.36), mats.seatFrame)
-    grid.position.set(x + 0.28, y - 0.34, z)
-    this.group.add(grid)
+    // 出水管 + 接水槽（同材质合并为单 mesh）
+    const spoutGeo = new CylinderGeometry(0.022, 0.022, 0.14, 10).translate(x + 0.28, y - 0.22, z)
+    const gridGeo = new BoxGeometry(0.16, 0.03, 0.36).translate(x + 0.28, y - 0.34, z)
+    this.group.add(new Mesh(mergeBufferGeometries([spoutGeo, gridGeo]), mats.seatFrame))
     // 出水按钮 + LED
     this.buttonMat = new MeshStandardMaterial({
       color: 0xc0392b,
@@ -460,9 +455,10 @@ export class Interior {
       const sp = this.steam[i]
       if (!sp) continue
       if (!steamOn) {
-        ;(sp.material as SpriteMaterial).opacity = 0
+        sp.visible = false // 隐藏时不产生 draw call
         continue
       }
+      sp.visible = true
       const life = (t * 0.8 + i * 0.33) % 1
       sp.position.set(
         this.boilerPos.x + 0.28 + Math.sin(life * 6.28 + i) * 0.03,

@@ -17,7 +17,7 @@ import { buildMaterials } from './world/materials'
 import { buildCabin, CAR } from './world/cabin'
 import { SeatRows } from './world/seats'
 import { Interior } from './world/interior'
-import { AutoDoor } from './world/doors'
+import { DoorSystem } from './world/doors'
 import { WindowWorld } from './world/windowWorld'
 import { Hud, type JumpPoint } from './ui/hud'
 import { DebugPanel } from './ui/debugPanel'
@@ -88,17 +88,19 @@ export async function bootApp(): Promise<void> {
   // ---- 通过台感应门 ----
   updateBoot(76, '安装感应门')
   await nextFrame()
-  const doors: AutoDoor[] = [
-    new AutoDoor('doorF', CAR.vestibuleZ, mats),
-    new AutoDoor('doorR', -CAR.vestibuleZ, mats),
-  ]
-  for (const d of doors) {
-    scene.add(d.group)
-    world.setDynamic(d.id, d.collider())
-  }
-  const syncDoorColliders = (): void => {
-    for (const d of doors) world.setDynamic(d.id, d.machine.isPassable ? null : d.collider())
-  }
+  const doors = new DoorSystem(
+    [
+      { id: 'doorF', z: CAR.vestibuleZ },
+      { id: 'doorR', z: -CAR.vestibuleZ },
+    ],
+    mats,
+  )
+  scene.add(doors.group)
+  doors.doors.forEach((d, i) => world.setDynamic(d.id, doors.collider(i)))
+  doors.setOnPassableChange((id, passable) => {
+    const i = doors.doors.findIndex((d) => d.id === id)
+    if (i >= 0) world.setDynamic(id, passable ? null : doors.collider(i))
+  })
 
   // ---- 窗外世界 ----
   updateBoot(86, '生成窗外景观')
@@ -109,7 +111,7 @@ export async function bootApp(): Promise<void> {
   // ---- 光照 ----
   updateBoot(92, '点亮车厢')
   await nextFrame()
-  const hemi = new HemisphereLight(0xfff4e0, 0x3a3f46, 0.8)
+  const hemi = new HemisphereLight(0xfff4e0, 0x71747c, 0.8) // 地面色模拟地毯/座椅反弹光照亮顶面
   scene.add(hemi)
   const sun = new DirectionalLight(0xfff2dd, 1.0)
   sun.position.set(26, 32, 6)
@@ -232,17 +234,15 @@ export async function bootApp(): Promise<void> {
     label: () => '开水机（点击接热水）',
     onInteract: () => interior.boilerPress(),
   })
-  for (const d of doors) {
-    for (const panel of d.panelMeshes) {
-      picker.register(panel, {
-        label: () => '通过台感应门',
-        onInteract: () => {
-          d.machine.toggle()
-          return d.machine.state === 'opening' ? '感应门：手动开启' : '感应门：关闭'
-        },
-      })
-    }
-  }
+  picker.register(doors.panelMeshRef, {
+    label: () => '通过台感应门',
+    onInteract: (i) => {
+      const d = doors.doorByInstance(i ?? 0)
+      if (!d) return
+      d.machine.toggle()
+      return d.machine.state === 'opening' ? '感应门：手动开启' : '感应门：关闭'
+    },
+  })
 
   // ---- 输入 ----
   const lookSens = 0.0032
@@ -359,13 +359,12 @@ export async function bootApp(): Promise<void> {
 
     // 门传感器（感应区 1.5m，门框防夹 0.75m）
     let doorAnim = false
-    for (const d of doors) {
+    doors.doors.forEach((d, i) => {
       const dist = Math.hypot(player.x, player.z - d.z)
       const inFrame = Math.abs(player.z - d.z) < 0.75 && Math.abs(player.x) < 0.7
-      d.sense(dist < 1.5, inFrame)
-      if (d.update(dt)) doorAnim = true
-    }
-    syncDoorColliders()
+      doors.sense(i, dist < 1.5, inFrame)
+    })
+    if (doors.update(dt)) doorAnim = true
 
     const seatsAnim = seats.update(dt)
     const interiorAnim = interior.update(dt)
@@ -373,15 +372,15 @@ export async function bootApp(): Promise<void> {
     const ch = dayNight.sample()
     windowWorld.update(dt, ch)
 
-    // 光照/材质随昼夜 & 隧道
+    // 光照/材质随昼夜 & 隧道（通道值→物理强度带应用侧倍率）
     const T = windowWorld.tunnel.amount
     const curtainFactor = 1 + (interior.curtainOpenRatio() - 1) * 0.08
-    hemi.intensity = ch.ambient * curtainFactor * (1 - T * 0.35)
-    sun.intensity = ch.sun * (1 - T)
+    hemi.intensity = ch.ambient * 2.3 * curtainFactor * (1 - T * 0.35)
+    sun.intensity = ch.sun * 1.45 * (1 - T)
     sun.castShadow = quality.shadows && sun.intensity > 0.05
-    for (const p of points) p.intensity = ch.cabinPoint * (1 + T * 0.1)
-    cabin.stripsMat.emissiveIntensity = ch.strips
-    cabin.screenMat.emissiveIntensity = ch.screen
+    for (const p of points) p.intensity = ch.cabinPoint * 2.6 * (1 + T * 0.1)
+    cabin.stripsMat.emissiveIntensity = ch.strips * 1.7
+    cabin.screenMat.emissiveIntensity = ch.screen * 1.25
     cabin.glassMat.opacity = 0.16 + ch.glassReflect * 0.3
     // 信息屏滚动
     const scr = cabin.screenMat.map

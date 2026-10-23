@@ -38,6 +38,7 @@ const POLE_SPAN = POLE_PER_SIDE * POLE_SPACING
 const PIER_SPACING = 42
 const PIER_PER_SIDE = 9
 const PIER_SPAN = PIER_PER_SIDE * PIER_SPACING
+const AXIS_Y = new Vector3(0, 1, 0)
 
 function tex(canvas: HTMLCanvasElement, repeatX: number): CanvasTexture {
   const t = new CanvasTexture(canvas)
@@ -194,17 +195,17 @@ export class WindowWorld {
   tunnel: TunnelInfo = { phase: 'idle', amount: 0, timer: 30 + Math.random() * 30 } // 首次进入隧道前的等待
   private scroll = 0
   private poleMesh: InstancedMesh
-  private armMesh: InstancedMesh
   private pierMesh: InstancedMesh
   private tubeMesh: Mesh
   private skyMat: MeshBasicMaterial
-  private groundMats: MeshBasicMaterial[] = []
-  private fieldMats: MeshBasicMaterial[] = []
-  private fieldMeshes: Mesh[] = []
-  private mountainMats: MeshBasicMaterial[] = []
-  private mountainMeshes: Mesh[] = []
+  private groundMat: MeshBasicMaterial
+  private deckMat: MeshBasicMaterial
+  private fieldMat: MeshBasicMaterial
+  private fieldMesh: Mesh
+  private mountainMat: MeshBasicMaterial
+  private mountainMesh: Mesh
   private townMat: MeshBasicMaterial
-  private townMeshes: Mesh[] = []
+  private townMesh: Mesh
   private tunnelMat: MeshStandardMaterial
   private mTmp = new Matrix4()
   private posTmp = new Vector3()
@@ -222,59 +223,48 @@ export class WindowWorld {
     dome.position.y = 16
     this.group.add(dome)
 
-    // ---- 近层：路基地带 + 高架桥面挡墙 ----
+    // ---- 近层：路基地带 + 高架桥面挡墙（双侧合并为单 mesh）----
     const groundTex = groundTexture(textureScale)
+    groundTex.repeat.set(3, 1)
     this.disposables.push(groundTex)
-    for (const side of [-1, 1]) {
-      const gTex = groundTex.clone()
-      gTex.needsUpdate = true
-      gTex.repeat.set(3, 1)
-      this.disposables.push(gTex)
-      const mat = new MeshBasicMaterial({ map: gTex, fog: false })
-      this.groundMats.push(mat)
-      const strip = new Mesh(new BoxGeometry(0.2, 4.5, 400), mat)
-      strip.position.set(side * 8.2, 0.4, 0)
-      this.group.add(strip)
-      const deckMat = new MeshBasicMaterial({ color: 0x9d9a92, fog: false })
-      this.groundMats.push(deckMat)
-      const deck = new Mesh(new BoxGeometry(0.25, 0.8, 400), deckMat)
-      deck.position.set(side * 4.3, -1.1, 0)
-      this.group.add(deck)
-    }
+    this.groundMat = new MeshBasicMaterial({ map: groundTex, fog: false })
+    const stripGeo = mergeBufferGeometries([
+      new BoxGeometry(0.2, 4.5, 400).translate(-8.2, 0.4, 0),
+      new BoxGeometry(0.2, 4.5, 400).translate(8.2, 0.4, 0),
+    ])
+    this.group.add(new Mesh(stripGeo, this.groundMat))
+    this.deckMat = new MeshBasicMaterial({ color: 0x9d9a92, fog: false })
+    const deckGeo = mergeBufferGeometries([
+      new BoxGeometry(0.25, 0.8, 400).translate(-4.3, -1.1, 0),
+      new BoxGeometry(0.25, 0.8, 400).translate(4.3, -1.1, 0),
+    ])
+    this.group.add(new Mesh(deckGeo, this.deckMat))
 
     // ---- 中层：农田色块（层 2+）----
     const fieldsTex = fieldsTexture(textureScale)
+    fieldsTex.repeat.set(3, 1)
     this.disposables.push(fieldsTex)
-    for (const side of [-1, 1]) {
-      const fTex = fieldsTex.clone()
-      fTex.needsUpdate = true
-      fTex.repeat.set(3, 1)
-      this.disposables.push(fTex)
-      const mat = new MeshBasicMaterial({ map: fTex, fog: false })
-      this.fieldMats.push(mat)
-      const band = new Mesh(new BoxGeometry(0.4, 26, 520), mat)
-      band.position.set(side * 52, 6, 0)
-      band.visible = this.layers >= 2
-      this.fieldMeshes.push(band)
-      this.group.add(band)
-    }
+    this.fieldMat = new MeshBasicMaterial({ map: fieldsTex, fog: false })
+    const fieldGeo = mergeBufferGeometries([
+      new BoxGeometry(0.4, 26, 520).translate(-52, 6, 0),
+      new BoxGeometry(0.4, 26, 520).translate(52, 6, 0),
+    ])
+    this.fieldMesh = new Mesh(fieldGeo, this.fieldMat)
+    this.fieldMesh.visible = this.layers >= 2
+    this.group.add(this.fieldMesh)
 
     // ---- 远层：远山 + 夜间城镇灯光（层 3）----
     const mtnTex = mountainsTexture(textureScale)
+    mtnTex.repeat.set(2, 1)
     this.disposables.push(mtnTex)
-    for (const side of [-1, 1]) {
-      const mTex = mtnTex.clone()
-      mTex.needsUpdate = true
-      mTex.repeat.set(2, 1)
-      this.disposables.push(mTex)
-      const mat = new MeshBasicMaterial({ map: mTex, transparent: true, fog: false })
-      this.mountainMats.push(mat)
-      const band = new Mesh(new BoxGeometry(0.6, 46, 900), mat)
-      band.position.set(side * 150, 12, 0)
-      band.visible = this.layers >= 3
-      this.mountainMeshes.push(band)
-      this.group.add(band)
-    }
+    this.mountainMat = new MeshBasicMaterial({ map: mtnTex, transparent: true, fog: false })
+    const mtnGeo = mergeBufferGeometries([
+      new BoxGeometry(0.6, 46, 900).translate(-150, 12, 0),
+      new BoxGeometry(0.6, 46, 900).translate(150, 12, 0),
+    ])
+    this.mountainMesh = new Mesh(mtnGeo, this.mountainMat)
+    this.mountainMesh.visible = this.layers >= 3
+    this.group.add(this.mountainMesh)
     const townTex = townLightsTexture(textureScale)
     this.disposables.push(townTex)
     this.townMat = new MeshBasicMaterial({
@@ -285,30 +275,26 @@ export class WindowWorld {
       depthWrite: false,
       fog: false,
     })
-    for (const side of [-1, 1]) {
-      const band = new Mesh(new BoxGeometry(0.5, 18, 700), this.townMat)
-      band.position.set(side * 95, 7, 0)
-      band.visible = this.layers >= 3
-      this.townMeshes.push(band)
-      this.group.add(band)
-    }
+    const townGeo = mergeBufferGeometries([
+      new BoxGeometry(0.5, 18, 700).translate(-95, 7, 0),
+      new BoxGeometry(0.5, 18, 700).translate(95, 7, 0),
+    ])
+    this.townMesh = new Mesh(townGeo, this.townMat)
+    this.townMesh.visible = this.layers >= 3
+    this.group.add(this.townMesh)
 
     // ---- 接触网电杆 + 悬臂（速度感核心视觉）----
     const mastGeo = new BoxGeometry(0.14, 8.5, 0.14)
     mastGeo.translate(0, 3.25, 0)
+    const armGeo = new BoxGeometry(1.9, 0.09, 0.09)
+    armGeo.translate(-0.95, 5.1, 0) // 悬臂与杆合并为单 InstancedMesh（同材质）
     this.poleMesh = new InstancedMesh(
-      mergeBufferGeometries([mastGeo]),
+      mergeBufferGeometries([mastGeo, armGeo]),
       new MeshStandardMaterial({ color: 0x5a5f66, roughness: 0.7, metalness: 0.3 }),
       POLE_PER_SIDE * 2,
     )
     this.poleMesh.frustumCulled = false
-    this.armMesh = new InstancedMesh(
-      new BoxGeometry(1.9, 0.09, 0.09),
-      new MeshStandardMaterial({ color: 0x5a5f66, roughness: 0.7, metalness: 0.3 }),
-      POLE_PER_SIDE * 2,
-    )
-    this.armMesh.frustumCulled = false
-    this.group.add(this.poleMesh, this.armMesh)
+    this.group.add(this.poleMesh)
 
     // ---- 高架桥墩 ----
     this.pierMesh = new InstancedMesh(
@@ -338,11 +324,9 @@ export class WindowWorld {
   /** 画质档变化时调整可见层数。 */
   setLayers(n: 1 | 2 | 3): void {
     this.layers = n
-    const fieldsVisible = n >= 2
-    const farVisible = n >= 3
-    for (const m of this.fieldMeshes) m.visible = fieldsVisible
-    for (const m of this.mountainMeshes) m.visible = farVisible
-    for (const m of this.townMeshes) m.visible = farVisible
+    this.fieldMesh.visible = n >= 2
+    this.mountainMesh.visible = n >= 3
+    this.townMesh.visible = n >= 3
   }
 
   update(dt: number, ch: DayNightChannels): void {
@@ -379,42 +363,37 @@ export class WindowWorld {
     const bright = Math.max(0.02, ch.windowWorld * (1 - T.amount * 0.96))
     this.tmpColor.setScalar(bright)
     this.skyMat.color.copy(this.tmpColor).multiplyScalar(1.15)
-    for (const m of this.groundMats) m.color.copy(this.tmpColor)
-    for (const m of this.fieldMats) m.color.copy(this.tmpColor)
-    for (const m of this.mountainMats) m.color.copy(this.tmpColor)
+    this.groundMat.color.copy(this.tmpColor)
+    this.deckMat.color.copy(this.tmpColor)
+    this.fieldMat.color.copy(this.tmpColor)
+    this.mountainMat.color.copy(this.tmpColor)
     this.townMat.opacity = ch.townLights * (1 - T.amount)
+    this.townMesh.visible = this.layers >= 3 && this.townMat.opacity > 0.01
     this.poleMesh.visible = bright > 0.25
-    this.armMesh.visible = this.poleMesh.visible
 
     // ---- 隧道管 ----
     this.tubeMesh.visible = T.amount > 0.01
     this.tunnelMat.opacity = T.amount
 
     // ---- 贴图滚动（各层视差系数 = 距离反比）----
-    const scrollGround = (this.scroll / 400) * 3
-    const scrollFields = (this.scroll / 520) * 3 * 0.55
-    const scrollMtn = (this.scroll / 900) * 2 * 0.2
-    for (const m of this.groundMats) if (m.map) m.map.offset.x = -scrollGround
-    for (const m of this.fieldMats) if (m.map) m.map.offset.x = -scrollFields
-    for (const m of this.mountainMats) if (m.map) m.map.offset.x = -scrollMtn
+    if (this.groundMat.map) this.groundMat.map.offset.x = -(this.scroll / 400) * 3
+    if (this.fieldMat.map) this.fieldMat.map.offset.x = -(this.scroll / 520) * 3 * 0.55
+    if (this.mountainMat.map) this.mountainMat.map.offset.x = -(this.scroll / 900) * 2 * 0.2
     if (this.townMat.map) this.townMat.map.offset.x = -(this.scroll / 700) * 0.6
     if (this.tunnelMat.map) this.tunnelMat.map.offset.x = -(this.scroll / 190) * 8
 
     // ---- 电杆/悬臂回收滚动 ----
-    this.quatTmp.identity()
     let i = 0
     for (const side of [-1, 1]) {
+      this.quatTmp.setFromAxisAngle(AXIS_Y, side === 1 ? Math.PI : 0) // 右侧悬臂镜像朝内
       for (let k = 0; k < POLE_PER_SIDE; k++) {
         const z = wrap(k * POLE_SPACING - this.scroll, POLE_SPAN) - POLE_SPAN / 2
         this.mTmp.compose(this.posTmp.set(side * 6.2, -0.6, z), this.quatTmp, this.scaleOne)
         this.poleMesh.setMatrixAt(i, this.mTmp)
-        this.mTmp.compose(this.posTmp.set(side * 5.25, 5.1, z), this.quatTmp, this.scaleOne)
-        this.armMesh.setMatrixAt(i, this.mTmp)
         i++
       }
     }
     this.poleMesh.instanceMatrix.needsUpdate = true
-    this.armMesh.instanceMatrix.needsUpdate = true
 
     // ---- 桥墩滚动 ----
     i = 0

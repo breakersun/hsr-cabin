@@ -86,22 +86,19 @@ export function buildCabin(mats: MaterialLibrary, textureScale: number): CabinPa
   const W = CAR.halfW
   const L = CAR.halfL
 
-  // 地板（地毯）与顶板
+  // 地板（地毯）；顶板并入下方 ceilingSpecs 合并
   const floor = new Mesh(new BoxGeometry(W * 2, 0.1, L * 2), mats.floor)
   floor.position.y = -0.05
   floor.receiveShadow = true
   group.add(floor)
 
-  const ceiling = new Mesh(new BoxGeometry(W * 2, 0.12, L * 2), mats.ceiling)
-  ceiling.position.y = H + 0.06
-  group.add(ceiling)
-
   // 侧墙（每侧）：下带 / 上带 / 窗间立柱 / 窗框 / 玻璃
   const lowerSpecs: BoxSpec[] = []
   const upperSpecs: BoxSpec[] = []
   const pillarSpecs: BoxSpec[] = []
-  const frameSpecs: BoxSpec[] = []
+  const darkSpecs: BoxSpec[] = [] // 深色件：窗框/风挡内凹（合并为 1 draw call）
   const glassSpecs: BoxSpec[] = []
+  const liverySpecs: BoxSpec[] = []
   const wallT = 0.1
 
   for (const side of [-1, 1]) {
@@ -130,7 +127,7 @@ export function buildCabin(mats: MaterialLibrary, textureScale: number): CabinPa
       const gapEnd = nextBay ? nextBay.z + nextBay.halfW : -8.4
       pillarSpecs.push({ w: wallT, h: winH, d: gapStart - gapEnd, x, y: winYMid, z: (gapStart + gapEnd) / 2 })
       // 窗框（四边细条，内外各一圈简化为内侧一圈）
-      frameSpecs.push(
+      darkSpecs.push(
         { w: 0.06, h: 0.05, d: bay.halfW * 2 + 0.12, x: side * (W - 0.02), y: CAR.windowY1 - 0.025, z: bay.z },
         { w: 0.06, h: 0.05, d: bay.halfW * 2 + 0.12, x: side * (W - 0.02), y: CAR.windowY0 + 0.025, z: bay.z },
       )
@@ -156,54 +153,36 @@ export function buildCabin(mats: MaterialLibrary, textureScale: number): CabinPa
     glassSpecs.push({ w: 0.02, h: 0.5, d: 0.7, x: side * (W + 0.01), y: CAR.windowY0 + 0.5, z: vz })
 
     // 外侧金红飘带（致敬意象，透过车窗沿车体可见）
-    const livery = new Mesh(new BoxGeometry(0.02, 0.62, L * 2 - 0.4), mats.livery)
-    livery.position.set(side * (W + 0.08), 1.28, 0)
-    group.add(livery)
+    liverySpecs.push({ w: 0.02, h: 0.62, d: L * 2 - 0.4, x: side * (W + 0.08), y: 1.28, z: 0 })
     colliders.push(makeAabb(side * (W + wallT / 2), H / 2, 0, wallT / 2, H / 2, L))
   }
-
-  const lower = mergedBoxMesh(lowerSpecs, mats.wallLower)
-  const upper = mergedBoxMesh(upperSpecs, mats.wallUpper)
-  const pillars = mergedBoxMesh(pillarSpecs, mats.pillar)
-  const frames = mergedBoxMesh(frameSpecs, mats.darkPanel)
-  const glass = mergedBoxMesh(glassSpecs, mats.glass)
-  glass.renderOrder = 2
-  for (const m of [lower, upper, pillars, frames]) m.receiveShadow = true
-  group.add(lower, upper, pillars, frames, glass)
 
   // 端墙（前 + 后）+ 走廊门装饰（MVP 边界：不可开启）
   for (const end of [-1, 1]) {
     const z = end * CAR.endZ
-    const wall = new Mesh(new BoxGeometry(W * 2, H, 0.12), mats.wallUpper)
-    wall.position.set(0, H / 2, z)
-    group.add(wall)
+    upperSpecs.push({ w: W * 2, h: H, d: 0.12, x: 0, y: H / 2, z })
     colliders.push(makeAabb(0, H / 2, z, W, H / 2, 0.08))
-    // 风挡走廊意象：深色内凹 + 门框
-    const recess = new Mesh(new BoxGeometry(1.15, 2.1, 0.06), mats.darkPanel)
-    recess.position.set(0, 1.05, z - end * 0.08)
-    group.add(recess)
-    const recessGlass = new Mesh(new BoxGeometry(0.55, 1.15, 0.02), mats.glass)
-    recessGlass.position.set(0, 1.45, z - end * 0.12)
-    group.add(recessGlass)
+    // 风挡走廊意象：深色内凹 + 门框玻璃
+    darkSpecs.push({ w: 1.15, h: 2.1, d: 0.06, x: 0, y: 1.05, z: z - end * 0.08 })
+    glassSpecs.push({ w: 0.55, h: 1.15, d: 0.02, x: 0, y: 1.45, z: z - end * 0.12 })
   }
 
   // 通过台隔墙（前/后）：留中部门洞
+  const trimSpecs: BoxSpec[] = []
   for (const end of [-1, 1]) {
     const z = end * CAR.vestibuleZ
     const sidePieceW = W - CAR.doorHalfW
-    const specs: BoxSpec[] = [
+    upperSpecs.push(
       { w: sidePieceW, h: H, d: 0.14, x: -(CAR.doorHalfW + sidePieceW / 2), y: H / 2, z },
       { w: sidePieceW, h: H, d: 0.14, x: CAR.doorHalfW + sidePieceW / 2, y: H / 2, z },
       { w: CAR.doorHalfW * 2, h: H - CAR.doorH, d: 0.14, x: 0, y: (CAR.doorH + H) / 2, z },
-      // 门套（金属）
+    )
+    // 门套（金属，跨端累积后一次合并）
+    trimSpecs.push(
       { w: 0.08, h: CAR.doorH, d: 0.2, x: -CAR.doorHalfW - 0.04, y: CAR.doorH / 2, z },
       { w: 0.08, h: CAR.doorH, d: 0.2, x: CAR.doorHalfW + 0.04, y: CAR.doorH / 2, z },
       { w: CAR.doorHalfW * 2 + 0.16, h: 0.08, d: 0.2, x: 0, y: CAR.doorH + 0.04, z },
-    ]
-    const dividing = mergedBoxMesh(specs, mats.wallUpper)
-    const doorTrim = mergedBoxMesh(specs.slice(3), mats.metal)
-    dividing.receiveShadow = true
-    group.add(dividing, doorTrim)
+    )
     colliders.push(
       makeAabb(-(CAR.doorHalfW + sidePieceW / 2), H / 2, z, sidePieceW / 2, H / 2, 0.09),
       makeAabb(CAR.doorHalfW + sidePieceW / 2, H / 2, z, sidePieceW / 2, H / 2, 0.09),
@@ -211,32 +190,26 @@ export function buildCabin(mats: MaterialLibrary, textureScale: number): CabinPa
     )
   }
 
-  // 顶板灯带（两条贯穿客室）+ 通过台小灯
-  const stripsMat = mats.stripOn
+  // 顶板 + 灯带凹槽（同材质合并）；灯带（两条贯穿客室）+ 通过台小灯
+  const ceilingSpecs: BoxSpec[] = [{ w: W * 2, h: 0.12, d: L * 2, x: 0, y: H + 0.06, z: 0 }]
+  const stripOnSpecs: BoxSpec[] = []
   for (const sx of [-0.85, 0.85]) {
-    const strip = new Mesh(new BoxGeometry(0.16, 0.03, 17.6), stripsMat)
-    strip.position.set(sx, H - 0.02, -0.3)
-    group.add(strip)
-    // 灯带凹槽
-    const trough = new Mesh(new BoxGeometry(0.22, 0.05, 17.7), mats.ceiling)
-    trough.position.set(sx, H - 0.045, -0.3)
-    group.add(trough)
+    stripOnSpecs.push({ w: 0.16, h: 0.03, d: 17.6, x: sx, y: H - 0.02, z: -0.3 })
+    ceilingSpecs.push({ w: 0.22, h: 0.05, d: 17.7, x: sx, y: H - 0.045, z: -0.3 }) // 灯带凹槽
   }
-  for (const vz of [10.3, -10.3]) {
-    const strip = new Mesh(new BoxGeometry(1.2, 0.03, 0.16), mats.stripDim)
-    strip.position.set(0, H - 0.02, vz)
-    group.add(strip)
-  }
+  const stripDimSpecs: BoxSpec[] = [
+    { w: 1.2, h: 0.03, d: 0.16, x: 0, y: H - 0.02, z: 10.3 },
+    { w: 1.2, h: 0.03, d: 0.16, x: 0, y: H - 0.02, z: -10.3 },
+  ]
 
-  // LED 信息屏（前隔墙上方，面向客室）
+  // LED 信息屏（前后隔墙上方，面向客室各一块；共享同一滚动贴图）
   const { mat: screenMat } = screenTexture(textureScale)
-  const screen = new Mesh(new BoxGeometry(1.5, 0.26, 0.05), screenMat)
-  screen.position.set(0, 1.98, -CAR.vestibuleZ - 0.1) // 后隔墙上方，面向 -Z 玩家来向
-  group.add(screen)
-  const screen2 = screen.clone()
-  screen2.position.z = CAR.vestibuleZ + 0.1
-  screen2.rotation.y = Math.PI
-  group.add(screen2)
+  const screenSpecs: BoxSpec[] = [
+    { w: 1.5, h: 0.26, d: 0.05, x: 0, y: 1.98, z: -CAR.vestibuleZ - 0.1 },
+    { w: 1.5, h: 0.26, d: 0.05, x: 0, y: 1.98, z: CAR.vestibuleZ + 0.1, ry: Math.PI },
+  ]
+
+  group.add(mergedBoxMesh(trimSpecs, mats.metal))
 
   // 通过台附属：扶手杆 + 折叠座椅意象（装饰）
   const handrailSpecs: BoxSpec[] = []
@@ -249,6 +222,22 @@ export function buildCabin(mats: MaterialLibrary, textureScale: number): CabinPa
     )
   }
   group.add(mergedBoxMesh(handrailSpecs, mats.metal))
+
+  // ---- 按材质分组合并（draw call 预算 <60/帧）----
+  const lower = mergedBoxMesh(lowerSpecs, mats.wallLower)
+  const upper = mergedBoxMesh(upperSpecs, mats.wallUpper) // 侧墙上带 + 端墙 + 通过台隔墙
+  const pillars = mergedBoxMesh(pillarSpecs, mats.pillar)
+  const dark = mergedBoxMesh(darkSpecs, mats.darkPanel) // 窗框 + 风挡内凹
+  const glass = mergedBoxMesh(glassSpecs, mats.glass) // 车窗 + 风挡玻璃
+  glass.renderOrder = 2
+  const ceiling = mergedBoxMesh(ceilingSpecs, mats.ceiling) // 顶板 + 灯带凹槽
+  const livery = mergedBoxMesh(liverySpecs, mats.livery)
+  const stripsMat = mats.stripOn
+  const stripOn = mergedBoxMesh(stripOnSpecs, stripsMat)
+  const stripDim = mergedBoxMesh(stripDimSpecs, mats.stripDim)
+  const screens = mergedBoxMesh(screenSpecs, screenMat)
+  for (const m of [lower, upper, pillars, dark, ceiling]) m.receiveShadow = true
+  group.add(lower, upper, pillars, dark, glass, ceiling, livery, stripOn, stripDim, screens)
 
   return { group, colliders, stripsMat, screenMat, glassMat: mats.glass }
 }
