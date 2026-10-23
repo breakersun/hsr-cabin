@@ -237,7 +237,7 @@ I can explore in the browser.
   driver cab (visible through glass door, instrument panel), business class
   (1+2 seats that recline flat), second class (3+2 rows, luggage racks, hot-water
   station, washroom with squat + seated toilets), café bar car. Real-ish
-  dimensions (~24m long, ~3.1m wide interior). High-recognition Fuxing-style
+  dimensions (~24m long, ~3.1m wide interior). High-recognition modern-HSR-style
   look (e.g. gold-red stripe livery visible through windows), but no
   official logos or wordmarks.
 - Touch-first controls: left virtual joystick to walk, right-side drag to look,

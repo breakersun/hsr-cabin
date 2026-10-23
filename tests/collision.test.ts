@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   capsuleAabbDistance,
+  substepSplit,
   capsuleHitsAabb,
   circleRectPushOut,
   clampPointToBox,
@@ -143,7 +144,47 @@ describe('辅助函数', () => {
   })
 })
 
+describe('substepSplit 子步长不变量（旧 max-axis 实现必红）', () => {
+  it('任意方向：每子步欧氏位移 ≤ maxStep', () => {
+    const maxStep = 0.27 // r=0.3 时的实际值
+    const dirs: Array<[number, number]> = [
+      [1, 1],
+      [3, 1],
+      [1, 3],
+      [-2, 2],
+      [2.4, 1.4],
+      [0.5, 0.5],
+      [5, 0.001],
+      [-1.6, 1.6],
+    ]
+    for (const [dx, dz] of dirs) {
+      const { steps, sx, sz } = substepSplit(dx, dz, maxStep)
+      expect(steps).toBeGreaterThanOrEqual(1)
+      expect(Math.hypot(sx, sz)).toBeLessThanOrEqual(maxStep + 1e-12)
+    }
+  })
+
+  it('45° 锚定：dx=dz=1、maxStep=0.27 → 步数按 hypot 取 6（旧 max-axis 实现取 4，每步 0.354>上限，本用例必红）', () => {
+    const s = substepSplit(1, 1, 0.27)
+    expect(s.steps).toBe(Math.ceil(Math.hypot(1, 1) / 0.27)) // = 6；旧实现 ceil(1/0.27)=4
+    expect(s.steps).toBe(6)
+    expect(Math.hypot(s.sx, s.sz)).toBeLessThanOrEqual(0.27)
+    // 旧实现反算：steps=4 时每步 hypot(0.25,0.25)=0.354，超出上限即历史缺陷
+    const legacySteps = Math.ceil(Math.max(Math.abs(1), Math.abs(1)) / 0.27)
+    expect(legacySteps).toBe(4)
+    expect(Math.hypot(1 / legacySteps, 1 / legacySteps)).toBeGreaterThan(0.27)
+  })
+
+  it('退化：零位移不产生除零', () => {
+    const s = substepSplit(0, 0, 0.27)
+    expect(s.steps).toBe(1)
+    expect(s.sx).toBe(0)
+    expect(s.sz).toBe(0)
+  })
+})
+
 describe('resolveMovement 斜向子步进（欧氏距离回归）', () => {
+  // 行为级补充：长薄墙 + 斜向大位移不穿越（与上面的步长不变量共同构成回归保护） {
   // 子步数按 hypot(dx,dz) 决定：45° 斜向移动每步实际位移 = hypot(sx,sz)，
   // 按坐标分量最大值估算会低估 ~1.41 倍。薄门板 + 大斜向位移不得隧穿。
   const doorPanel = makeAabb(0, 1.0, 0, 0.04, 1.0, 2.0) // 8cm 薄板（z 向加长：斜向路径无法绕过端部，只能穿过或被挡）

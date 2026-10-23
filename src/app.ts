@@ -313,17 +313,23 @@ export async function bootApp(): Promise<void> {
     quality = qualityForTier(t)
     engine.applyQuality(quality, { keepCurrentDpr })
     windowWorld.setLayers(quality.sceneryLayers)
-    // 阴影分辨率随档位生效：更新 mapSize 并释放旧 shadow map
-    // （不 dispose 的话 three 会沿用已分配的旧分辨率贴图）
-    if (
-      quality.shadowMapSize > 0 &&
-      (sun.shadow.mapSize.x !== quality.shadowMapSize || sun.shadow.mapSize.y !== quality.shadowMapSize)
-    ) {
-      sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize)
-      if (sun.shadow.map) {
-        sun.shadow.map.dispose()
-        sun.shadow.map = null
+    // 阴影随档位生效：更新 mapSize 并释放旧 shadow map——任何切档组合都不泄漏
+    // （three 只有在旧 map 被 dispose+置 null 后才会按新 mapSize 重新分配；
+    //   降到无阴影档时同样要释放，否则旧贴图常驻显存）
+    if (quality.shadows && quality.shadowMapSize > 0) {
+      if (
+        sun.shadow.mapSize.x !== quality.shadowMapSize ||
+        sun.shadow.mapSize.y !== quality.shadowMapSize
+      ) {
+        sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize)
+        if (sun.shadow.map) {
+          sun.shadow.map.dispose()
+          sun.shadow.map = null
+        }
       }
+    } else if (sun.shadow.map) {
+      sun.shadow.map.dispose()
+      sun.shadow.map = null
     }
     if (notify) hud.toast(`性能保护：已降至${t === 'low' ? '低' : '中'}档画质`)
   }

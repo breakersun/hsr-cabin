@@ -93,6 +93,22 @@ export function circleRectPushOut(x: number, z: number, r: number, b: AABB): { d
 }
 
 /**
+ * 子步切分（纯函数，vitest 直接断言步长不变量）：
+ * 每子步的欧氏位移 hypot(sx, sz) 必须 ≤ maxStep。
+ * 步数按 hypot(dx, dz) 计算——历史上按坐标分量最大值计算会低估
+ * 45° 斜向每步实际位移约 1.41 倍（已回归覆盖，见 tests/collision.test.ts）。
+ */
+export function substepSplit(
+  dx: number,
+  dz: number,
+  maxStep: number,
+): { steps: number; sx: number; sz: number } {
+  const dist = Math.hypot(dx, dz)
+  const steps = Math.max(1, Math.ceil(dist / maxStep))
+  return { steps, sx: dx / steps, sz: dz / steps }
+}
+
+/**
  * 解算移动后的位置：目标位置 (x+dx, z+dz) 对所有碰撞体做迭代推出。
  * 天然形成贴墙滑行（推力只作用于穿入分量）。
  * 大步长（低帧率/闲置降频时一帧可移动 >0.3m）按胶囊半径子步进，
@@ -109,12 +125,7 @@ export function resolveMovement(
   boxes: readonly AABB[],
 ): { x: number; z: number } {
   const maxStep = Math.max(r * 0.9, 0.05)
-  // 子步数按欧氏距离决定：斜向移动每步实际位移 = hypot(sx, sz)，
-  // 若按坐标分量最大值估算会低估约 1.41 倍（45° 时），导致斜向防隧穿失效
-  const dist = Math.hypot(dx, dz)
-  const steps = Math.max(1, Math.ceil(dist / maxStep))
-  const sx = dx / steps
-  const sz = dz / steps
+  const { steps, sx, sz } = substepSplit(dx, dz, maxStep)
   let px = x
   let pz = z
   for (let s = 0; s < steps; s++) {
