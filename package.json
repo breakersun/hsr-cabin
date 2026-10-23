@@ -1,0 +1,27 @@
+{
+  "name": "hsr-cabin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "在浏览器里第一人称漫游中国高铁二等座车厢（现代高速列车风格致敬，程序化几何）",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/three": "^0.186.0",
+    "eslint": "^10.13.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

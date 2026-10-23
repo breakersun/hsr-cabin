@@ -1,0 +1,401 @@
+/* HSR-Cabin — 移动优先 HUD 样式
+   红线：100dvh / env(safe-area-inset-*) / 触控热区 >= 48px / canvas touch-action:none */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* 安全区变量：CSS 侧供 HUD 布局，JS 侧（touchRouter）经 getComputedStyle 读取 */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: #101418;
+  font-family: system-ui, -apple-system, 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  height: 100vh;
+  height: 100dvh;
+  width: 100vw;
+}
+
+#scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none; /* 防浏览器手势抢戏（PRD 4.1） */
+}
+
+/* ---------- 启动遮罩 ---------- */
+#boot {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #14181d, #1d232a);
+  z-index: 60;
+  transition: opacity 0.4s ease;
+}
+#boot.done {
+  opacity: 0;
+  pointer-events: none;
+}
+.boot-card {
+  text-align: center;
+  color: #e8e2d5;
+  width: min(78vw, 320px);
+}
+.boot-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #c9a15a;
+}
+.boot-sub {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #b7bcc4;
+}
+.boot-bar {
+  margin-top: 18px;
+  height: 6px;
+  border-radius: 3px;
+  background: #2a313a;
+  overflow: hidden;
+}
+#boot-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #c9a15a, #c0392b);
+  transition: width 0.15s ease;
+}
+#boot-step {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #8a919b;
+}
+
+/* ---------- 通用 HUD 基元 ---------- */
+.hud {
+  position: absolute;
+  z-index: 20;
+  color: #e8e2d5;
+}
+.hud-btn {
+  min-width: 48px;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(201, 161, 90, 0.45);
+  background: rgba(16, 20, 24, 0.62);
+  color: #e8e2d5;
+  border-radius: 12px;
+  font-size: 14px;
+  padding: 0 14px;
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.hud-btn:active {
+  background: rgba(201, 161, 90, 0.25);
+}
+.hud-btn.primary {
+  background: rgba(201, 161, 90, 0.85);
+  color: #14181d;
+  font-weight: 600;
+}
+
+/* 顶部左：车型速度徽标（装饰性） */
+#badge {
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: calc(env(safe-area-inset-left, 0px) + 10px);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: none;
+}
+#badge .line1 {
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #c9a15a;
+  font-weight: 600;
+}
+#badge .line2 {
+  font-size: 11px;
+  color: #b7bcc4;
+}
+
+/* 顶部右：菜单按钮 */
+#menu-wrap {
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  right: calc(env(safe-area-inset-right, 0px) + 10px);
+  display: flex;
+  gap: 8px;
+}
+
+/* 菜单面板 */
+#menu {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 66px);
+  right: calc(env(safe-area-inset-right, 0px) + 10px);
+  width: min(84vw, 260px);
+  background: rgba(16, 20, 24, 0.88);
+  border: 1px solid rgba(201, 161, 90, 0.35);
+  border-radius: 14px;
+  padding: 10px;
+  z-index: 30;
+  backdrop-filter: blur(8px);
+}
+#menu.hidden {
+  display: none;
+}
+#menu h3 {
+  font-size: 12px;
+  color: #c9a15a;
+  margin: 6px 6px 6px;
+  font-weight: 600;
+}
+#menu .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 4px 8px;
+}
+#menu .row .hud-btn {
+  flex: 1 1 40%;
+  min-height: 48px;
+  font-size: 13px;
+  padding: 6px 8px;
+}
+#menu .hud-btn.on {
+  border-color: #c9a15a;
+  background: rgba(201, 161, 90, 0.3);
+}
+
+/* 底部提示条 + 目标标签 */
+#bottom {
+  left: 0;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  padding: 0 12px;
+}
+#target-label {
+  max-width: 86vw;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 10px;
+  background: rgba(201, 161, 90, 0.9);
+  color: #14181d;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+#target-label.show {
+  opacity: 1;
+}
+#hint {
+  font-size: 12px;
+  color: #cfd3d9;
+  background: rgba(16, 20, 24, 0.55);
+  padding: 6px 12px;
+  border-radius: 10px;
+  backdrop-filter: blur(3px);
+  text-align: center;
+}
+#hint .x {
+  pointer-events: auto;
+  color: #c9a15a;
+  margin-left: 8px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+/* toast */
+#toasts {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 40;
+}
+.toast {
+  font-size: 13px;
+  background: rgba(20, 24, 29, 0.92);
+  border: 1px solid rgba(201, 161, 90, 0.5);
+  color: #f0ead9;
+  padding: 8px 16px;
+  border-radius: 10px;
+  animation: toast-in 0.18s ease;
+  max-width: 82vw;
+  text-align: center;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 竖屏提示（非阻断） */
+#portrait-tip {
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  background: rgba(20, 24, 29, 0.9);
+  border: 1px solid rgba(201, 161, 90, 0.4);
+  padding: 8px 14px;
+  border-radius: 10px;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  z-index: 35;
+}
+#portrait-tip .x {
+  cursor: pointer;
+  color: #c9a15a;
+  padding: 4px 8px;
+}
+
+/* 右下角功能键 */
+#corner {
+  right: calc(env(safe-area-inset-right, 0px) + 10px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 54px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#corner .hud-btn {
+  width: 48px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 17px;
+}
+
+/* ---------- 虚拟摇杆 ---------- */
+/* 可视摇杆仅为提示层：不接收任何指针事件——触摸全部落在 canvas 上，
+   由 TouchControls 在左下激活区内动态生成摇杆（激活区远大于可视盘） */
+#joy {
+  pointer-events: none;
+  position: absolute;
+  left: calc(var(--safe-left) + 26px);
+  bottom: calc(var(--safe-bottom) + 26px);
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(232, 226, 213, 0.35);
+  background: rgba(16, 20, 24, 0.28);
+  z-index: 25;
+  display: none; /* 触摸设备由 JS 显示 */
+  touch-action: none;
+}
+#joy .knob {
+  pointer-events: none;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(201, 161, 90, 0.75);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+#joy.dynamic {
+  border-style: dashed;
+}
+
+/* ---------- 调试面板 ?debug=1 ---------- */
+#debug {
+  top: calc(env(safe-area-inset-top, 0px) + 58px);
+  left: calc(env(safe-area-inset-left, 0px) + 10px);
+  font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: rgba(8, 10, 12, 0.75);
+  border: 1px solid rgba(120, 200, 255, 0.35);
+  color: #9fd8ff;
+  padding: 6px 10px;
+  border-radius: 8px;
+  white-space: pre;
+  z-index: 50;
+  pointer-events: none;
+  display: none;
+}
+
+/* ---------- WebGL 失败降级页 ---------- */
+#gl-error {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 70;
+  background: #14181d;
+  color: #d8dce2;
+  text-align: center;
+  padding: 24px;
+}
+#gl-error.show {
+  display: flex;
+}
+#gl-error .card {
+  max-width: 420px;
+}
+#gl-error h2 {
+  color: #c0392b;
+  margin-bottom: 10px;
+  font-size: 18px;
+}
+#gl-error p {
+  font-size: 13px;
+  color: #9aa1ab;
+  line-height: 1.7;
+}
+
+/* 桌面端准星 */
+#crosshair {
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: rgba(232, 226, 213, 0.8);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+  z-index: 15;
+  display: none;
+  pointer-events: none;
+}
