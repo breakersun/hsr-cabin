@@ -7,6 +7,14 @@
   box-sizing: border-box;
 }
 
+/* 安全区变量：CSS 侧供 HUD 布局，JS 侧（touchRouter）经 getComputedStyle 读取 */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
 html,
 body {
   height: 100%;
@@ -299,10 +307,13 @@ body {
 }
 
 /* ---------- 虚拟摇杆 ---------- */
+/* 可视摇杆仅为提示层：不接收任何指针事件——触摸全部落在 canvas 上，
+   由 TouchControls 在左下激活区内动态生成摇杆（激活区远大于可视盘） */
 #joy {
+  pointer-events: none;
   position: absolute;
-  left: calc(env(safe-area-inset-left, 0px) + 26px);
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 26px);
+  left: calc(var(--safe-left) + 26px);
+  bottom: calc(var(--safe-bottom) + 26px);
   width: 108px;
   height: 108px;
   border-radius: 50%;
@@ -313,6 +324,7 @@ body {
   touch-action: none;
 }
 #joy .knob {
+  pointer-events: none;
   position: absolute;
   left: 50%;
   top: 50%;
