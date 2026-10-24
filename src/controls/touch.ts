@@ -62,8 +62,12 @@ export class TouchControls {
     if (e.pointerType === 'mouse') return
     this.active = true
     this.cb.onActivity()
-    this.canvas.setPointerCapture?.(e.pointerId)
+    // 路由先行：TouchRouter 纯逻辑不可能抛，必须先占槽——交互成立不依赖任何
+    // 后续 DOM 调用（真机反馈 #6：旧顺序 capture 在前，Android Chrome 在滚动
+    // 接管/pointercancel 后指针失活时对其抛 InvalidStateError，异常冒到全局
+    // → 错误横幅；onDown 中断 → 触点永远进不了路由 → 输入整体 wedge）
     const role = this.router.route(e.pointerId, e.clientX, e.clientY, this.geometry())
+    this.capture(e.pointerId)
     if (role === 'move') {
       // 控制向量以真实指尖为原点（1:1 手感）；仅可视盘位置被钳制在安全区内
       this.stickOrigin = { x: e.clientX, y: e.clientY }
@@ -105,6 +109,16 @@ export class TouchControls {
       const dy = e.clientY - this.lookLast.y
       this.lookLast = { x: e.clientX, y: e.clientY }
       this.cb.onLook(dx, dy)
+    }
+  }
+
+  /** best-effort 指针捕获：捕获是增强不是前提（保证 move 不被浏览器截走），
+   * 失败只降级事件连续性，绝不冒泡中断交互。 */
+  private capture(pointerId: number): void {
+    try {
+      this.canvas.setPointerCapture?.(pointerId)
+    } catch {
+      // Android Chrome：指针已被浏览器接管/回收时抛 InvalidStateError——忽略
     }
   }
 
