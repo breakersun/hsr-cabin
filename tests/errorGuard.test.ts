@@ -6,6 +6,8 @@ import {
   Heartbeat,
   HEARTBEAT_MS,
   loadProbes,
+  PersistThrottle,
+  PERSIST_THROTTLE_MS,
   SESSION_KEY,
   STORAGE_KEY,
   type GuardRecord,
@@ -114,6 +116,15 @@ describe('ContextTracker 上下文丢失流', () => {
     expect(c.expired(1000 + 9000)).toBe(false)
   })
 
+  it('超时判死后真实 restored 到来 ⇒ 也算恢复（收掉「请刷新」横幅，评审 MINOR）', () => {
+    const c = new ContextTracker()
+    c.lost(1000)
+    expect(c.expired(1000 + 8000)).toBe(true) // dead
+    expect(c.restored()).toBe(true) // 上下文其实活了：允许收横幅
+    expect(c.phase).toBe('restored')
+    expect(c.restored()).toBe(false) // 幂等
+  })
+
   it('未 lost 时 restored 返回 false（幂等安全）', () => {
     const c = new ContextTracker()
     expect(c.restored()).toBe(false)
@@ -174,5 +185,21 @@ describe('Heartbeat 崩溃取证心跳', () => {
     expect(loadProbes('{"a":1}')).toEqual([])
     expect(loadProbes('[{"at":1,"heapMB":2}]')).toEqual([]) // 缺 tier
     expect(loadProbes('[{"at":1,"heapMB":2,"tier":"low"},null,{"at":2,"tier":"high"}]')).toHaveLength(2)
+  })
+})
+
+describe('PersistThrottle 风暴落盘频率（评审 MAJOR：去重只限条数，不限写入频率）', () => {
+  it('fresh 立即放行；重复上报仅在节流窗口外放行（report 的落盘/横幅刷新共用此门）', () => {
+    const t = new PersistThrottle()
+    expect(t.allow(true, 1000)).toBe(true) // 首条错误：立即落盘
+    expect(t.allow(false, 1100)).toBe(false) // +100ms 风暴重复：跳过（不同步写 localStorage）
+    expect(t.allow(false, 2999)).toBe(false) // 窗口边界内
+    expect(t.allow(false, 3000)).toBe(true) // 2000ms 窗口到：放行一次
+    expect(t.allow(false, 3100)).toBe(false) // 窗口重置
+    expect(t.allow(true, 3200)).toBe(true) // 新错误条目不受窗口约束
+  })
+
+  it('窗口契约 2000ms（风暴下至多每 2s 一次序列化+落盘）', () => {
+    expect(PERSIST_THROTTLE_MS).toBe(2000)
   })
 })

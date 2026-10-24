@@ -160,7 +160,8 @@ export class BannerState {
 }
 
 /** 纯逻辑：WebGL 上下文丢失跟踪。
- *  lost →（restored ⇒ 恢复；超时 ⇒ 建议刷新）。 */
+ *  lost →（restored ⇒ 恢复；超时 ⇒ 建议刷新）。超时判死后真实 restored 到来
+ *  也算恢复（返回 true 供调用方收掉「请刷新」横幅——上下文其实活了）。 */
 export type ContextPhase = 'ok' | 'lost' | 'restored' | 'dead'
 
 export class ContextTracker {
@@ -173,7 +174,7 @@ export class ContextTracker {
   }
 
   restored(): boolean {
-    if (this.phase !== 'lost') return false
+    if (this.phase !== 'lost' && this.phase !== 'dead') return false
     this.phase = 'restored'
     return true
   }
@@ -195,6 +196,26 @@ export interface GuardStorage {
   setItem(k: string, v: string): void
 }
 
+/**
+ * 风暴下的落盘/横幅刷新节流（评审 MAJOR：去重只限记录条数，不限写入频率——
+ * 每帧异常 = 每帧 JSON 序列化 + localStorage 同步写 + DOM 重写）。
+ * fresh（新条目）立即放行并重置窗口；重复计数仅在窗口外放行。
+ */
+export const PERSIST_THROTTLE_MS = 2000
+
+export class PersistThrottle {
+  private lastAt = 0
+  constructor(private intervalMs = PERSIST_THROTTLE_MS) {}
+
+  allow(fresh: boolean, now = Date.now()): boolean {
+    if (fresh || now - this.lastAt >= this.intervalMs) {
+      this.lastAt = now
+      return true
+    }
+    return false
+  }
+}
+
 /** DOM 外壳：全局监听 + 横幅 + 持久化。单例（install 一次）。 */
 export class ErrorGuard {
   private static instance: ErrorGuard | null = null
@@ -205,6 +226,7 @@ export class ErrorGuard {
   private bannerText: HTMLElement | null = null
   private ctxTimer = 0
   private hbTimer = 0
+  private persistGate = new PersistThrottle()
 
   static install(storage: GuardStorage = window.localStorage): ErrorGuard {
     if (ErrorGuard.instance) return ErrorGuard.instance
@@ -232,18 +254,26 @@ export class ErrorGuard {
       const r = e.reason
       this.report('rejection', String(r instanceof Error ? r.message : r), r instanceof Error ? r.stack : undefined)
     })
+    // 卸载兜底：节流窗口内最后一次计数变化也保证落盘（崩溃前最后状态在盘上）
+    window.addEventListener('pagehide', () => {
+      safeSet(this.storage, STORAGE_KEY, this.log.toJSON())
+    })
   }
 
-  /** 上报一条（去重落盘 + 按状态机拉横幅）。 */
+  /** 上报一条。首条/新条目即时落盘；风暴计数更新节流落盘（PERSIST_THROTTLE_MS），
+   *  横幅拉起仅一次、×N 计数刷新同节流，内容不变不重写 DOM。 */
   report(kind: string, message: string, stack?: string): void {
-    this.log.add({ at: Date.now(), kind, message, stack })
+    const fresh = this.log.add({ at: Date.now(), kind, message, stack })
     const rec = this.log.list()[this.log.list().length - 1]
     if (!rec) return
-    safeSet(this.storage, STORAGE_KEY, this.log.toJSON())
-    if (this.banner.report(kind, message, rec.count ?? 1)) {
+    const gate = this.persistGate.allow(fresh)
+    if (gate) safeSet(this.storage, STORAGE_KEY, this.log.toJSON())
+    const key = `${kind}::${message}`
+    const alreadyShown = this.banner.phase === 'shown' && this.banner.currentKey === key
+    if (this.banner.report(kind, message, rec.count ?? 1) && !alreadyShown) {
       this.showBanner(kind === 'ctxlost' ? `⚠ ${message}` : `应用遇到问题：${message}${rec.count && rec.count > 1 ? `（×${rec.count}）` : ''}`, kind !== 'ctxlost')
-    } else if (this.banner.phase === 'shown') {
-      // 风暴计数增长：刷新现有横幅的 ×N
+    } else if (alreadyShown && gate) {
+      // 风暴计数增长：按节流刷新现有横幅的 ×N
       this.showBanner(`应用遇到问题：${message}${rec.count && rec.count > 1 ? `（×${rec.count}）` : ''}`, true)
     }
   }
@@ -303,7 +333,7 @@ export class ErrorGuard {
       this.bannerEl = el
       this.bannerText = txt
     }
-    if (this.bannerText) this.bannerText.textContent = text
+    if (this.bannerText && this.bannerText.textContent !== text) this.bannerText.textContent = text
     this.bannerEl?.querySelector('.x')?.classList.toggle('hidden', !dismissible)
     this.bannerEl?.classList.add('show')
   }

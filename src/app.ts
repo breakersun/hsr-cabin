@@ -308,7 +308,11 @@ export async function bootApp(): Promise<void> {
       dayNight.toggle()
       hud.toast(dayNight.mode === 'night' ? '切换到夜晚' : '切换到白天')
     },
-    onMenu: () => hud.toggleMenu(),
+    onMenu: () => {
+      // 菜单是明确的交互出口：解锁归因随之失效（评审 MINOR：菜单路径不复位会滞留）
+      desktopControls.unlockCause = null
+      hud.toggleMenu()
+    },
     onActivity: () => engine.noteActivity(),
   })
   // 桌面准星 + 指针锁定释放提示（真机反馈「自动退出」形态之一：失焦/策略
@@ -335,9 +339,11 @@ export async function bootApp(): Promise<void> {
     // 菜单打开时菜单本身就是明确的交互出口，不再叠提示
     const showResume = !locked && !touch && desktopControls.active && !hud.menuOpen
     resumeTip.classList.toggle('show', showResume)
-    if (showResume && desktopControls.unexpectedUnlock) {
-      desktopControls.unexpectedUnlock = false
-      guard.report('pointerlock', '指针锁定被意外释放（失焦/浏览器策略），已显示继续提示')
+    // 真机反馈 #4：良性失焦（切窗/截图热键）解锁只留「点击继续」覆盖层；
+    // 页面可见且聚焦下自发释放才是真异常——可能是「标签页消失」的前驱事件，报警+落盘
+    if (showResume && desktopControls.unlockCause === 'unexpected') {
+      desktopControls.unlockCause = null
+      guard.report('pointerlock', '指针锁定被意外释放（页面可见且聚焦，非失焦非 ESC）')
     }
   })
 
