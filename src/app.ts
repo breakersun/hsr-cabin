@@ -160,6 +160,9 @@ export async function bootApp(): Promise<void> {
   await nextFrame()
   const shell = makeAabb(0, 1.15, 0, CAR.halfW - 0.05, CAR.height / 2 + 0.6, CAR.halfL - 0.05)
   const player = new Player(shell)
+  // 相机姿态污染取证（真机反馈 #5「按键→标签页消失」）：NaN/Inf 被
+  // applyToCamera 拦截回退时落盘——真机再触发即留下「相机非有限」实锤
+  player.onCorrupt = () => guard.report('camera', '相机姿态出现非有限值（NaN/Inf），已回退最近良好姿态')
   const dayNight = new DayNightController(0.8)
 
   const hud = new Hud(touch, {
@@ -315,6 +318,10 @@ export async function bootApp(): Promise<void> {
     },
     onActivity: () => engine.noteActivity(),
   })
+  // IME 吞键取证（真机反馈 #5「按键不响应」）：headless 实测 IME 组合事件
+  // （e.key='Process'/kc229）下移动输入恒为 0——真机若走此形态，这里一次性
+  // 落盘即坐实；不走则排除 IME 假设，二选一，下次 ?debug=1 见分晓
+  desktopControls.onImeKey = () => guard.report('ime', '检测到输入法组合键（kc229）：组合期间移动键不可用')
   // 桌面准星 + 指针锁定释放提示（真机反馈「自动退出」形态之一：失焦/策略
   // 释放锁定后光标回来、画面看似停住——给出明确的「点击继续」出口）
   const crosshair = document.createElement('div')

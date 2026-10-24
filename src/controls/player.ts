@@ -33,6 +33,11 @@ export class Player {
   flyY = 1.55
   /** 本次 update 是否发生位移（供闲置检测） */
   moved = false
+  /** 姿态出现非有限值被拦截时触发（app 层接 errorGuard 落盘取证：
+   *  真机「按键→标签页消失」若走 NaN→GPU 路径，这里会留下实锤记录） */
+  onCorrupt: (() => void) | null = null
+  /** 最近一次有限良好姿态（非有限时回退源） */
+  private lastGood = { x: 0, z: -7.5, yaw: Math.PI, pitch: 0, flyY: 1.55 }
 
   constructor(public shell: AABB) {}
 
@@ -103,6 +108,26 @@ export class Player {
    *  现统一为 YXZ 直写 + 显式钉住 up=(0,1,0)，保证任何环境下
    *  出生即正立、抬头看天花板、低头看地板。rollZ 仅供车体晃动微滚转。 */
   applyToCamera(camera: PerspectiveCamera, rollZ = 0): void {
+    // 有限性守卫（真机反馈 #5）：NaN/Inf 一旦进入相机矩阵会一路传到 GPU 顶点属性，
+    // 部分驱动直接 TDR/重置 → 渲染进程死亡（形态 D）。任何分量非有限 →
+    // 回退最近良好姿态并上报，绝不让脏值到达渲染管线。
+    if (
+      Number.isFinite(this.x) && Number.isFinite(this.z) && Number.isFinite(this.yaw) &&
+      Number.isFinite(this.pitch) && Number.isFinite(this.flyY) && Number.isFinite(rollZ)
+    ) {
+      this.lastGood.x = this.x
+      this.lastGood.z = this.z
+      this.lastGood.yaw = this.yaw
+      this.lastGood.pitch = this.pitch
+      this.lastGood.flyY = this.flyY
+    } else {
+      this.x = this.lastGood.x
+      this.z = this.lastGood.z
+      this.yaw = this.lastGood.yaw
+      this.pitch = this.lastGood.pitch
+      this.flyY = this.lastGood.flyY
+      this.onCorrupt?.()
+    }
     camera.rotation.order = 'YXZ'
     camera.rotation.set(this.pitch, this.yaw, rollZ)
     camera.up.set(0, 1, 0)
