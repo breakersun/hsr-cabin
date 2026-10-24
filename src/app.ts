@@ -21,6 +21,7 @@ import { DoorSystem } from './world/doors'
 import { WindowWorld } from './world/windowWorld'
 import { Hud, type JumpPoint } from './ui/hud'
 import { DebugPanel } from './ui/debugPanel'
+import { ErrorGuard } from './ui/errorGuard'
 
 const nextFrame = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => r()))
 
@@ -138,6 +139,23 @@ export async function bootApp(): Promise<void> {
   for (const p of points) scene.add(p)
 
   // ---- 玩家与控制 ----
+  // 崩溃诊断加固（永不无声死亡）：主循环/渲染异常与 WebGL 上下文事件 →
+  // 可关闭横幅 + localStorage 留痕（hsr:lasterror），?debug=1 面板可见
+  const guard = ErrorGuard.install()
+  engine.onError = (err, where) => {
+    const e = err instanceof Error ? err : { message: String(err), stack: undefined }
+    guard.report(where === 'frame' ? 'frame' : 'render', e.message.slice(0, 160), e.stack)
+  }
+  engine.onContextEvent = (lost) => {
+    if (lost) guard.onContextLost()
+    else guard.onContextRestored()
+  }
+  // 会话心跳（真机「标签页直接消失」取证）：每 30s 落盘 heap/档位，
+  // 渲染进程暴毙后崩前轨迹留在 localStorage，下次 ?debug=1 可见
+  guard.startHeartbeat(() => {
+    const mem = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory
+    return { heapMB: mem ? +(mem.usedJSHeapSize / 1048576).toFixed(1) : null, tier: engine.quality.tier }
+  })
   updateBoot(96, '连接控制')
   await nextFrame()
   const shell = makeAabb(0, 1.15, 0, CAR.halfW - 0.05, CAR.height / 2 + 0.6, CAR.halfL - 0.05)
@@ -293,16 +311,34 @@ export async function bootApp(): Promise<void> {
     onMenu: () => hud.toggleMenu(),
     onActivity: () => engine.noteActivity(),
   })
-  // 桌面准星
+  // 桌面准星 + 指针锁定释放提示（真机反馈「自动退出」形态之一：失焦/策略
+  // 释放锁定后光标回来、画面看似停住——给出明确的「点击继续」出口）
   const crosshair = document.createElement('div')
   crosshair.id = 'crosshair'
   crosshair.className = 'hud'
   document.getElementById('app')?.append(crosshair)
   if (!touch) crosshair.style.display = 'none'
+  const resumeTip = document.createElement('div')
+  resumeTip.id = 'resume-tip'
+  resumeTip.className = 'hud'
+  resumeTip.textContent = '已暂停 · 点击继续探索'
+  resumeTip.addEventListener('click', () => {
+    resumeTip.classList.remove('show')
+    void canvas.requestPointerLock?.()
+    engine.noteActivity()
+  })
+  document.getElementById('app')?.append(resumeTip)
   document.addEventListener('pointerlockchange', () => {
     const locked = document.pointerLockElement === canvas
     crosshair.style.display = locked ? 'block' : 'none'
     picker.setHoverEnabled(locked)
+    // 菜单打开时菜单本身就是明确的交互出口，不再叠提示
+    const showResume = !locked && !touch && desktopControls.active && !hud.menuOpen
+    resumeTip.classList.toggle('show', showResume)
+    if (showResume && desktopControls.unexpectedUnlock) {
+      desktopControls.unexpectedUnlock = false
+      guard.report('pointerlock', '指针锁定被意外释放（失焦/浏览器策略），已显示继续提示')
+    }
   })
 
   // ---- 自适应降档 ----
@@ -354,6 +390,10 @@ export async function bootApp(): Promise<void> {
   // ---- 调试面板 ----
   const debugEnabled = new URLSearchParams(location.search).get('debug') === '1'
   const debugPanel = new DebugPanel(() => engine.stats, debugEnabled)
+  if (debugEnabled) {
+    // 诊断句柄（仅 ?debug=1）：真机控制台 / 浸泡脚本直读引擎内部状态
+    ;(window as unknown as { __hsr?: unknown }).__hsr = { engine, player, world, dayNight, governor }
+  }
 
   // ---- 主循环 ----
   updateBoot(100, '发车')

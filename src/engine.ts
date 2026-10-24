@@ -51,6 +51,11 @@ export class Engine {
   private onFrame: (dt: number) => boolean = () => false
   private onVisibility: (visible: boolean) => void = () => {}
   private resizeHandler: () => void = () => {}
+  /** 主循环/渲染异常上报（永不无声死亡：循环不断，异常上报后继续下一帧） */
+  onError: ((err: unknown, where: 'frame' | 'render') => void) | null = null
+  /** WebGL 上下文事件（app 层负责横幅与持久化记录） */
+  onContextEvent: ((lost: boolean) => void) | null = null
+  contextLost = false
 
   constructor(canvas: HTMLCanvasElement, quality: QualitySettings) {
     this.quality = quality
@@ -73,6 +78,17 @@ export class Engine {
     this.applyQuality(quality)
 
     document.addEventListener('visibilitychange', this.handleVisibility)
+    // WebGL 上下文丢失/恢复：lost 必须 preventDefault 才有机会恢复（否则
+    // three 直接假死）；恢复由 three 内部重建纹理/程序，这里只上报与放行
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault()
+      this.contextLost = true
+      this.onContextEvent?.(true)
+    })
+    canvas.addEventListener('webglcontextrestored', () => {
+      this.contextLost = false
+      this.onContextEvent?.(false)
+    })
     this.resizeHandler = () => {
       this.camera.aspect = window.innerWidth / window.innerHeight
       this.camera.updateProjectionMatrix()
@@ -161,9 +177,22 @@ export class Engine {
     this.lastT = now
     this.lastRenderT = now
 
-    const busy = this.onFrame(dt)
+    // 单帧异常不得杀死主循环（此前 onFrame 一抛 → render 也被跳过 → 画面
+    // 永久冻结，用户感知即「自动退出」）；捕获上报后继续下一帧
+    let busy = false
+    try {
+      busy = this.onFrame(dt)
+    } catch (err) {
+      this.onError?.(err, 'frame')
+    }
     if (busy) this.lastActivity = now
-    this.renderer.render(this.scene, this.camera)
+    if (!this.contextLost) {
+      try {
+        this.renderer.render(this.scene, this.camera)
+      } catch (err) {
+        this.onError?.(err, 'render')
+      }
+    }
 
     // 统计
     const info = this.renderer.info.render

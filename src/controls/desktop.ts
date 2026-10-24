@@ -16,6 +16,9 @@ export class DesktopControls {
   active = false
   private keys = new Set<string>()
   private locked = false
+  private lastEscapeAt = 0
+  /** 最近一次解锁是否「非用户主动」（窗口失焦/浏览器策略等）：供 app 层记录 */
+  unexpectedUnlock = false
   /** input() 复用对象（主循环每帧调用，避免每帧分配） */
   private inputState = { forward: 0, strafe: 0, run: false, lift: 0 }
 
@@ -42,8 +45,10 @@ export class DesktopControls {
     if (k === 'f') this.cb.onToggleFly()
     else if (k === 'n') this.cb.onToggleDayNight()
     else if (k === 'e') this.cb.onInteract()
-    else if (k === 'escape') this.cb.onMenu()
-    else if (k === 'm') this.cb.onMenu()
+    else if (k === 'escape') {
+      this.lastEscapeAt = performance.now()
+      this.cb.onMenu()
+    } else if (k === 'm') this.cb.onMenu()
     if (['w', 'a', 's', 'd', 'shift', ' ', 'e', 'f', 'n'].includes(k)) e.preventDefault()
   }
 
@@ -62,8 +67,13 @@ export class DesktopControls {
   }
 
   private onLockChange = (): void => {
+    const was = this.locked
     this.locked = document.pointerLockElement === this.canvas
-    if (!this.locked) this.keys.clear()
+    if (!this.locked) {
+      // ESC 触发的解锁是用户主动（150ms 内有 escape 键）；其余（失焦/策略）视为意外
+      this.unexpectedUnlock = was && performance.now() - this.lastEscapeAt > 150
+      this.keys.clear()
+    }
   }
 
   private onMouseMove = (e: MouseEvent): void => {

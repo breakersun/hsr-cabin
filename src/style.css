@@ -399,3 +399,66 @@ body {
   display: none;
   pointer-events: none;
 }
+
+/* ---------- 崩溃诊断加固（errorGuard / resume-tip） ---------- */
+#guard-banner {
+  pointer-events: none;
+  position: absolute;
+  top: calc(var(--safe-top) + 52px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(86vw, 560px);
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(146, 44, 32, 0.92);
+  color: #fdeee9;
+  font-size: 13px;
+  line-height: 1.45;
+  z-index: 60;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+#guard-banner.show {
+  display: flex;
+}
+#guard-banner .msg {
+  word-break: break-all;
+}
+#guard-banner .x {
+  pointer-events: auto;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.14);
+  color: inherit;
+  font-size: 20px;
+  cursor: pointer;
+}
+#guard-banner .x.hidden {
+  display: none;
+}
+
+/* 指针锁定释放后的「点击继续」提示（非阻断小卡片） */
+#resume-tip {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 76px);
+  transform: translateX(-50%);
+  padding: 12px 22px;
+  border-radius: 12px;
+  background: rgba(16, 20, 24, 0.82);
+  border: 1px solid rgba(232, 226, 213, 0.35);
+  color: #e8e2d5;
+  font-size: 14px;
+  cursor: pointer;
+  z-index: 55;
+  backdrop-filter: blur(6px);
+}
+#resume-tip.show {
+  display: block;
+}
