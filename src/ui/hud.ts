@@ -196,6 +196,11 @@ export class Hud {
     this.menuEl.classList.toggle('hidden', !show)
   }
 
+  /** 菜单是否打开（app 层用于决定是否显示「点击继续」提示）。 */
+  get menuOpen(): boolean {
+    return !this.menuEl.classList.contains('hidden')
+  }
+
   toast(text: string, ms = 2200): void {
     const t = el('div', 'toast', text)
     this.toastEl.append(t)

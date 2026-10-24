@@ -12,10 +12,33 @@ export interface DesktopCallbacks {
   onActivity(): void
 }
 
+/** 解锁归因（真机反馈 #4：意外解锁需区分良性失焦与真异常）。
+ *  - escape：150ms 内有 ESC 键 → 用户主动
+ *  - blur：解锁时页面已隐藏/失焦（切窗、截图热键等）→ 良性，不报警
+ *  - unexpected：页面可见且聚焦下自发释放 → 真异常信号
+ *    （若历史上每次崩溃前都有一次这种静默解锁，即 #3「标签页消失」的前驱事件——落盘可见） */
+export type UnlockCause = 'escape' | 'blur' | 'unexpected'
+
+/** 纯函数（vitest 直测）。wasLocked=false（本来就没锁）返回 null。 */
+export function classifyUnlock(
+  wasLocked: boolean,
+  msSinceEscape: number,
+  visible: boolean,
+  focused: boolean,
+): UnlockCause | null {
+  if (!wasLocked) return null
+  if (msSinceEscape <= 150) return 'escape'
+  if (!visible || !focused) return 'blur'
+  return 'unexpected'
+}
+
 export class DesktopControls {
   active = false
   private keys = new Set<string>()
   private locked = false
+  private lastEscapeAt = 0
+  /** 最近一次解锁归因（null = 未发生/已消费）：unexpected 供 app 层报警落盘 */
+  unlockCause: UnlockCause | null = null
   /** input() 复用对象（主循环每帧调用，避免每帧分配） */
   private inputState = { forward: 0, strafe: 0, run: false, lift: 0 }
 
@@ -42,8 +65,10 @@ export class DesktopControls {
     if (k === 'f') this.cb.onToggleFly()
     else if (k === 'n') this.cb.onToggleDayNight()
     else if (k === 'e') this.cb.onInteract()
-    else if (k === 'escape') this.cb.onMenu()
-    else if (k === 'm') this.cb.onMenu()
+    else if (k === 'escape') {
+      this.lastEscapeAt = performance.now()
+      this.cb.onMenu()
+    } else if (k === 'm') this.cb.onMenu()
     if (['w', 'a', 's', 'd', 'shift', ' ', 'e', 'f', 'n'].includes(k)) e.preventDefault()
   }
 
@@ -62,8 +87,18 @@ export class DesktopControls {
   }
 
   private onLockChange = (): void => {
+    const was = this.locked
     this.locked = document.pointerLockElement === this.canvas
-    if (!this.locked) this.keys.clear()
+    if (!this.locked) {
+      // 解锁瞬间采集旁证：页面可见且聚焦下自发释放才是真异常（详见 classifyUnlock）
+      this.unlockCause = classifyUnlock(
+        was,
+        performance.now() - this.lastEscapeAt,
+        document.visibilityState === 'visible',
+        document.hasFocus(),
+      )
+      this.keys.clear()
+    }
   }
 
   private onMouseMove = (e: MouseEvent): void => {
