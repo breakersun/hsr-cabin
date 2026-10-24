@@ -39,6 +39,11 @@ export class DesktopControls {
   private lastEscapeAt = 0
   /** 最近一次解锁归因（null = 未发生/已消费）：unexpected 供 app 层报警落盘 */
   unlockCause: UnlockCause | null = null
+  /** 真机取证钩子（反馈 #5）：IME 组合键（e.key='Process'/kc229）在输入层天然不可见
+   *  ——headless 已证实该事件形态移动输入恒为 0。检测到即一次性回调（app 层落盘，
+   *  ?debug=1 可见），用于判别真机「按键不响应」是否 IME 吞键。 */
+  onImeKey: (() => void) | null = null
+  private imeReported = false
   /** input() 复用对象（主循环每帧调用，避免每帧分配） */
   private inputState = { forward: 0, strafe: 0, run: false, lift: 0 }
 
@@ -58,6 +63,12 @@ export class DesktopControls {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    // IME 组合期间按键（含 kc229）：一次性取证回调。移动键在组合期间收不到
+    // 真实 e.key（headless 实测 Δ=0），这是「按键不响应」唯一已证实的输入层机制。
+    if ((e.isComposing || e.keyCode === 229) && !this.imeReported) {
+      this.imeReported = true
+      this.onImeKey?.()
+    }
     this.active = true
     this.cb.onActivity()
     const k = e.key.toLowerCase()

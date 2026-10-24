@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PerspectiveCamera, Vector3 } from 'three'
 import { Player } from '../src/controls/player'
-import { makeAabb } from '../src/physics/collision'
+import { CollisionWorld, makeAabb } from '../src/physics/collision'
 
 /** 回归背景：线上真机反馈「出生瞬间天花板和地面上下颠倒」。
  *  本组用例从数学层锁定相机姿态契约：出生正立、抬头=天花板（dir.y>0）、
@@ -85,5 +85,71 @@ describe('Player 相机姿态方向契约', () => {
     expect(d1.x).toBeCloseTo(d2.x, 9)
     expect(d1.y).toBeCloseTo(d2.y, 9)
     expect(d1.z).toBeCloseTo(d2.z, 9)
+  })
+})
+
+/** 真机反馈 #5：「按 D/S 不响应，有时标签页直接消失（形态 D）」。
+ *  键位接线与向量数学在数学层证伪（WASD 对称用例）；NaN→GPU→驱动重置路径
+ *  由有限性守卫封堵：非有限姿态回退最近良好值 + onCorrupt 取证回调。 */
+describe('相机有限性守卫（真机反馈 #5）', () => {
+  const shellAabb = makeAabb(0, 1.15, 0, 1.6, 1.75, 11.45)
+  it('位置非有限 → 回退最近良好姿态，相机不收脏值，onCorrupt 触发（旧实现 NaN 直写相机）', () => {
+    const p = new Player(shellAabb)
+    const cam = new PerspectiveCamera()
+    p.applyToCamera(cam) // 基线 (0, -7.5)
+    p.teleport(1.2, -4, Math.PI)
+    p.applyToCamera(cam) // (1.2, -4) 入 lastGood
+    let corrupt = 0
+    p.onCorrupt = () => {
+      corrupt++
+    }
+    p.x = Number.NaN
+    p.applyToCamera(cam)
+    expect(corrupt).toBe(1)
+    expect(Number.isFinite(cam.position.x)).toBe(true) // 旧实现此处为 NaN（杀旧）
+    expect(cam.position.x).toBeCloseTo(1.2, 6) // 回退到最近良好 x
+    expect(p.x).toBeCloseTo(1.2, 6)
+  })
+
+  it('姿态分量（pitch/yaw）非有限同样拦截；恢复后良好值继续更新、不误报', () => {
+    const p = new Player(shellAabb)
+    const cam = new PerspectiveCamera()
+    p.applyToCamera(cam)
+    let corrupt = 0
+    p.onCorrupt = () => {
+      corrupt++
+    }
+    p.pitch = Number.POSITIVE_INFINITY
+    p.applyToCamera(cam, 0)
+    expect(corrupt).toBe(1)
+    expect(Number.isFinite(cam.rotation.x)).toBe(true)
+    expect(p.pitch).toBe(0) // 回退基线 pitch
+    p.teleport(0.5, -6, Math.PI)
+    p.look(0, 0.3)
+    p.applyToCamera(cam)
+    expect(corrupt).toBe(1) // 有限帧不触发
+    p.yaw = Number.NaN
+    p.applyToCamera(cam)
+    expect(corrupt).toBe(2)
+    expect(Number.isFinite(cam.rotation.y)).toBe(true)
+    expect(cam.rotation.y).toBeCloseTo(Math.PI, 6) // 回退 lastGood yaw
+  })
+
+  it('WASD 四向位移对称（S/D 接线与向量数学回归锁定，真机「D/S 不响应」在数学层证伪）', () => {
+    const empty = new CollisionWorld() // 无碰撞体：纯移动数学
+    const dt = 0.5
+    const dist = (forward: number, strafe: number): number => {
+      const p = new Player(shellAabb)
+      p.move({ forward, strafe, run: false }, dt, empty)
+      return Math.hypot(p.x, p.z + 7.5) // 出生 (0, -7.5)
+    }
+    const w = dist(1, 0)
+    const s = dist(-1, 0)
+    const a = dist(0, -1)
+    const d = dist(0, 1)
+    expect(w).toBeCloseTo(s, 9) // S 后退 == W 前进
+    expect(a).toBeCloseTo(d, 9) // D 右移 == A 左移
+    expect(w).toBeCloseTo(a, 9)
+    expect(w).toBeCloseTo(1.4 * dt, 9) // walkSpeed·dt
   })
 })
